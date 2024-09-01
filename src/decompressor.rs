@@ -9,6 +9,7 @@ use crate::{
 pub struct SpriteData {
 	pub width: u16,
 	pub height: u16,
+	pub bit_depth: u16,
 	pub pixels: Vec<u8>,
 	pub palette: Vec<u8>,
 }
@@ -18,6 +19,7 @@ impl Default for SpriteData {
 		SpriteData {
 			width: 0,
 			height: 0,
+			bit_depth: 8,
 			pixels: Vec::new(),
 			palette: Vec::new(),
 		}
@@ -25,7 +27,7 @@ impl Default for SpriteData {
 }
 
 
-pub fn decompress(bin_data: Vec<u8>, header: BinHeader) -> SpriteData {
+pub fn decompress(bin_data: Vec<u8>, header: BinHeader, reindex: bool) -> SpriteData {
 	let pixel_count: usize = header.width as usize * header.height as usize;
 	let mut pointer: usize = 0x10;
 	let mut palette: Vec<u8> = Vec::new();
@@ -100,8 +102,10 @@ pub fn decompress(bin_data: Vec<u8>, header: BinHeader) -> SpriteData {
 	
 	// Bit depth management
 	match header.bit_depth {
-		4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector),//, true),
-		8 => (), // No transform needed
+		4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector),
+		8 => if reindex {
+			pixel_vector = sprite_transform::reindex_vector(pixel_vector);
+		},
 		// Shouldn't ever happen
 		_ => panic!("sprite_compress::decompress() error: Invalid BIN bit depth"),
 	}
@@ -111,6 +115,7 @@ pub fn decompress(bin_data: Vec<u8>, header: BinHeader) -> SpriteData {
 	return SpriteData {
 		width: header.width,
 		height: header.height,
+		bit_depth: header.bit_depth,
 		pixels: pixel_vector,
 		palette: palette,
 	};

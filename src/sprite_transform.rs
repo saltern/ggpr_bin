@@ -1,3 +1,14 @@
+pub fn reindex_vector(vector: Vec<u8>) -> Vec<u8> {
+	let mut temp_vec: Vec<u8> = Vec::new();
+
+	for pixel in 0..vector.len() {
+		temp_vec.push(transform_index(vector[pixel]));
+	}
+	
+	return temp_vec;
+}
+
+
 pub fn transform_index(mut value: u8) -> u8 {
 	// Divide the currently read byte by 8.
 	// - If remainder + 2 can be evenly divided by 4, output is byte value - 8
@@ -22,17 +33,17 @@ pub fn bpp_from_4(input_pixels: Vec<u8>) -> Vec<u8> {//, flip: bool) -> Vec<u8> 
 	// When decompressing a 4 bpp sprite, the resulting pixel vector will contain
 	// two pixels per byte (0000-0000). Separate and push them to output.
 	// if flip {
-		// for index in 0..input_pixels.len() {
-			// output_pixels.push(input_pixels[index] & 0xF);
-			// output_pixels.push(input_pixels[index] >> 4);
-		// }
+	for index in 0..input_pixels.len() {
+		output_pixels.push(input_pixels[index] & 0xF);
+		output_pixels.push(input_pixels[index] >> 4);
+	}
 	// }
 	
 	// else {
-	for index in 0..input_pixels.len() {
-		output_pixels.push(input_pixels[index] >> 4);
-		output_pixels.push(input_pixels[index] & 0xF);
-	}
+	// for index in 0..input_pixels.len() {
+		// output_pixels.push(input_pixels[index] >> 4);
+		// output_pixels.push(input_pixels[index] & 0xF);
+	// }
 	// }
 	
 	return output_pixels;

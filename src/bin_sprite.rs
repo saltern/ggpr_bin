@@ -66,6 +66,9 @@ pub struct BinSprite {
 	/// The grayscale texture loaded from a sprite.
 	#[export]
 	texture: Option<Gd<ImageTexture>>,
+	/// The sprite's color depth.
+	#[export]
+	bit_depth: u16,
 	/// A [PackedByteArray] representing a list of RGBA colors.
 	#[export]
 	palette: PackedByteArray,
@@ -78,6 +81,7 @@ impl IResource for BinSprite {
 		Self {
 			base: base,
 			texture: None,
+			bit_depth: 8,
 			palette: PackedByteArray::from(vec![]),
 		}
 	}
@@ -88,11 +92,12 @@ impl IResource for BinSprite {
 impl BinSprite {
 	/// Static constructor for BinSprites.
 	#[func]
-	pub fn new_from_data(texture: Gd<ImageTexture>, palette: PackedByteArray) -> Gd<Self> {
+	pub fn new_from_data(texture: Gd<ImageTexture>, bit_depth: u16, palette: PackedByteArray) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
 			Self {
 				base: base,
 				texture: Some(texture),
+				bit_depth: bit_depth,
 				palette: palette,
 			}
 		});

@@ -48,8 +48,7 @@ impl BinPalette {
 			return Default::default();
 		}
 		
-		let mut bin_data: Vec<u8>;
-		let color_count: usize;
+		let bin_data: Vec<u8>;
 		
 		match fs::read(path_buf) {
 			Ok(data) => {
@@ -58,7 +57,6 @@ impl BinPalette {
 					return Default::default();
 				}
 				
-				color_count = 2usize.pow(data[0x04] as u32);
 				bin_data = Vec::from(&data[0x10..]);
 			},
 			
@@ -68,39 +66,66 @@ impl BinPalette {
 			},
 		}
 		
-		let mut temp_pal: Vec<u8> = vec![0u8; bin_data.len()];
-		
-		// Reindex
-		if color_count == 256 {
-			for color in 0..color_count {
-				let new_index: usize = transform_index(color);
-				temp_pal[4 * color + 0] = bin_data[4 * new_index + 0];
-				temp_pal[4 * color + 1] = bin_data[4 * new_index + 1];
-				temp_pal[4 * color + 2] = bin_data[4 * new_index + 2];
-				temp_pal[4 * color + 3] = bin_data[4 * new_index + 3];
-			}
-		}
-		
-		bin_data = temp_pal.clone();
-		
-		// Alpha processing
-		for color in 0..color_count {
-			let alpha: usize = 4 * color + 3;
-			if bin_data[alpha] == 0x80 {
-				bin_data[alpha] = 0xFF;
-			}
-			
-			else {
-				bin_data[alpha] *= 2;
-			}
-		}
-		
 		return Gd::from_init_fn(|base| {
 			Self {
 				base: base,
 				palette: PackedByteArray::from(bin_data),
 			}
 		});
+	}
+	
+	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice-versa.
+	#[func]
+	pub fn reindex(&mut self) {		
+		let mut temp_pal: Vec<u8> = vec![0u8; self.palette.len()];
+		
+		let color_count: usize = self.palette.len() / 4;
+		
+		for color in 0..color_count {
+			let new_index: usize = transform_index(color);
+			temp_pal[4 * color + 0] = self.palette[4 * new_index + 0];
+			temp_pal[4 * color + 1] = self.palette[4 * new_index + 1];
+			temp_pal[4 * color + 2] = self.palette[4 * new_index + 2];
+			temp_pal[4 * color + 3] = self.palette[4 * new_index + 3];
+		}
+		
+		self.palette = PackedByteArray::from(temp_pal);
+	}
+	
+	/// Alpha halving function. Halves all alpha values except for 0xFF, which is set to 0x80.
+	#[func]
+	pub fn alpha_halve(&mut self) {
+		let color_count: usize = self.palette.len() / 4;
+		
+		for color in 0..color_count {
+			let alpha: usize = 4 * color + 3;
+		
+			if self.palette[alpha] == 0xFF {
+				self.palette[alpha] = 0x80;
+			}
+			
+			else {
+				self.palette[alpha] = self.palette[alpha] / 2;
+			}
+		}
+	}
+	
+	/// Alpha doubling function. Doubles all alpha values except for 0x80, which is set to 0xFF.
+	#[func]
+	pub fn alpha_double(&mut self) {
+		let color_count: usize = self.palette.len() / 4;
+		
+		for color in 0..color_count {
+			let alpha: usize = 4 * color + 3;
+			
+			if self.palette[alpha] == 0x80 {
+				self.palette[alpha] = 0xFF;
+			}
+			
+			else {
+				self.palette[alpha] = self.palette[alpha] * 2;
+			}
+		}
 	}
 }
 

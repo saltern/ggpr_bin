@@ -59,6 +59,38 @@ pub fn get_header(data: Vec<u8>) -> BinHeader {
 }
 
 
+pub fn make_header(compressed: bool, clut: u16, bit_depth: u16, width: u16, height: u16, tw: u16, th: u16, hash: u16) -> Vec<u8> {
+	let mut return_vector: Vec<u8> = Vec::with_capacity(0x10);
+	
+	// mode (compressed/uncompressed)
+	return_vector.push(compressed as u8);
+	return_vector.push(0x00);
+	
+	// clut (embedded palette)
+	return_vector.extend_from_slice(&clut.to_le_bytes());
+	
+	// pix (bit depth)
+	return_vector.extend_from_slice(&bit_depth.to_le_bytes());
+	
+	// width
+	return_vector.extend_from_slice(&width.to_le_bytes());
+	
+	// height
+	return_vector.extend_from_slice(&height.to_le_bytes());
+	
+	// tw (unknown)
+	return_vector.extend_from_slice(&tw.to_le_bytes());
+	
+	// th (unknown)
+	return_vector.extend_from_slice(&th.to_le_bytes());
+	
+	// hash (generation method unknown, doesn't affect result)
+	return_vector.extend_from_slice(&hash.to_le_bytes());
+	
+	return return_vector;
+}
+
+
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Data resulting from loading a sprite_#.bin file.

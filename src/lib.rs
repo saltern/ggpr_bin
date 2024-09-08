@@ -193,6 +193,130 @@ impl IResource for SpriteExporter {
 
 #[godot_api]
 impl SpriteExporter {
+	fn make_bin(
+		file_path: PathBuf,
+		sprite: &BinSprite,
+		palette_include: bool,
+		external_palette: Vec<u8>,
+		palette_alpha_mode: u64,
+		palette_override: bool,
+		reindex: bool
+	) {
+		let clut: u16;
+		let mut palette: Vec<u8>;
+		
+		// No palette
+		if !palette_include {
+			clut = 0x00;
+			palette = Vec::new();
+		}
+		
+		// Palette included
+		else {
+			clut = 0x20;
+			
+			// Sprite has no embedded palette or is forced override
+			if sprite.palette.is_empty() || palette_override {
+				palette = external_palette;
+			}
+			
+			// Sprite has embedded palette
+			else {
+				palette = sprite.palette.to_vec();
+			}
+		}
+		
+		for index in 0..palette.len() / 4 {
+			match palette_alpha_mode {
+				// AS_IS
+				0 => (),
+				
+				// DOUBLE
+				1 => {
+					if palette[4 * index + 3] >= 0x80 {
+						palette[4 * index + 3] = 0xFF;
+					}
+					
+					else {
+						palette[4 * index + 3] = palette[4 * index + 3] * 2;
+					}
+				},
+				
+				// HALVE
+				2 => palette[4 * index + 3] = palette[4 * index + 3] / 2,
+				
+				// OPAQUE
+				_ => palette[4 * index + 3] = 0xFF,
+			}
+		}
+		
+		let pixel_vector: Vec<u8>;
+		if reindex {
+			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
+		}
+		
+		else {
+			pixel_vector = sprite.pixels.to_vec();
+		}
+		
+		let image: Gd<Image> = sprite.image.clone().unwrap();
+		let width = image.get_width() as u16;
+		let height = image.get_height() as u16;
+		
+		let header_bytes: Vec<u8> = bin_sprite::make_header(
+			false, clut, sprite.bit_depth, width, height, 0, 0, 0);
+		
+		let bin_file: File;
+		match File::create(&file_path) {
+			Ok(file) => bin_file = file,
+			_ => return Default::default(),
+		}
+		
+		let mut buffer = BufWriter::new(bin_file);
+		let _ = buffer.write_all(&header_bytes);
+		
+		if clut == 0x20 {
+			let _ = buffer.write_all(&palette);
+		}
+		
+		let _ = buffer.write_all(&pixel_vector);
+		let _ = buffer.flush();
+	}
+	
+
+	fn make_raw(
+		mut path_buf: PathBuf,
+		name_index: u64,
+		sprite: &BinSprite,
+		reindex: bool
+	) {
+		let image: Gd<Image> = sprite.image.clone().unwrap();
+		let width = image.get_width();
+		let height = image.get_height();
+		
+		path_buf.push(format!("sprite_{}-W-{}-H-{}.raw", name_index, width, height));
+		
+		let pixel_vector: Vec<u8>;
+		if reindex {
+			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
+		}
+		
+		else {
+			pixel_vector = sprite.pixels.to_vec();
+		}
+		
+		let raw_file: File;
+		match File::create(&path_buf) {
+			Ok(file) => raw_file = file,
+			_ => return Default::default(),
+		}
+		
+		let mut buffer = BufWriter::new(raw_file);
+		let _ = buffer.write_all(&pixel_vector);
+		let _ = buffer.flush();
+	}
+	
+	
 	fn make_png(
 		file_path: PathBuf,
 		sprite: &BinSprite,
@@ -456,39 +580,6 @@ impl SpriteExporter {
 	}
 	
 	
-	fn make_raw(
-		mut path_buf: PathBuf,
-		name_index: u64,
-		sprite: &BinSprite,
-		reindex: bool
-	) {
-		let image: Gd<Image> = sprite.image.clone().unwrap();
-		let width = image.get_width();
-		let height = image.get_height();
-		
-		path_buf.push(format!("sprite_{}-W-{}-H-{}.raw", name_index, width, height));
-		
-		let pixel_vector: Vec<u8>;
-		if reindex {
-			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
-		}
-		
-		else {
-			pixel_vector = sprite.pixels.to_vec();
-		}
-		
-		let raw_file: File;
-		match File::create(&path_buf) {
-			Ok(file) => raw_file = file,
-			_ => return Default::default(),
-		}
-		
-		let mut buffer = BufWriter::new(raw_file);
-		let _ = buffer.write_all(&pixel_vector);
-		let _ = buffer.flush();
-	}
-	
-	
 	/// Saves sprites in the specified format at the specified path.
 	#[func]
 	fn export_sprites(
@@ -517,6 +608,19 @@ impl SpriteExporter {
 			let mut file_path: PathBuf = path_buf.clone();
 			
 			match g_format.to_string().as_str() {
+				"bin" => {
+					file_path.push(format!("sprite_{}.bin", name_index));
+					Self::make_bin(
+						file_path,
+						sprite.bind_mut().deref(),
+						palette_include,
+						g_palette.to_vec(),
+						palette_alpha_mode,
+						palette_override,
+						reindex
+					);
+				},
+			
 				"png" => {
 					file_path.push(format!("sprite_{}.png", name_index));
 					Self::make_png(

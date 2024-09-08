@@ -6,6 +6,7 @@ use crate::{
 	Base,
 	Resource,
 	IResource,
+	Image,
 	ImageTexture,
 };
 
@@ -63,15 +64,21 @@ pub fn get_header(data: Vec<u8>) -> BinHeader {
 /// Data resulting from loading a sprite_#.bin file.
 pub struct BinSprite {
 	base: Base<Resource>,
+	/// A [PackedByteArray] representing the raw pixel vector.
+	#[export]
+	pub pixels: PackedByteArray,
+	/// The base image loaded from a sprite.
+	#[export]
+	pub image: Option<Gd<Image>>,
 	/// The grayscale texture loaded from a sprite.
 	#[export]
-	texture: Option<Gd<ImageTexture>>,
+	pub texture: Option<Gd<ImageTexture>>,
 	/// The sprite's color depth.
 	#[export]
-	bit_depth: u16,
+	pub bit_depth: u16,
 	/// A [PackedByteArray] representing a list of RGBA colors.
 	#[export]
-	palette: PackedByteArray,
+	pub palette: PackedByteArray,
 }
 
 
@@ -80,6 +87,8 @@ impl IResource for BinSprite {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
 			base: base,
+			pixels: PackedByteArray::from(vec![]),
+			image: None,
 			texture: None,
 			bit_depth: 8,
 			palette: PackedByteArray::from(vec![]),
@@ -92,11 +101,13 @@ impl IResource for BinSprite {
 impl BinSprite {
 	/// Static constructor for BinSprites.
 	#[func]
-	pub fn new_from_data(texture: Gd<ImageTexture>, bit_depth: u16, palette: PackedByteArray) -> Gd<Self> {
+	pub fn new_from_data(pixels: PackedByteArray, image: Gd<Image>, bit_depth: u16, palette: PackedByteArray) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
 			Self {
 				base: base,
-				texture: Some(texture),
+				pixels: pixels,
+				image: Some(image.clone()),
+				texture: Some(ImageTexture::create_from_image(image).unwrap()),
 				bit_depth: bit_depth,
 				palette: palette,
 			}

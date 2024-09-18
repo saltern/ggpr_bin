@@ -30,6 +30,47 @@ pub fn transform_index(mut value: u8) -> u8 {
 }
 
 
+pub fn indexed_as_rgb(input_pixels: Vec<u8>, palette: &Vec<u8>) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	for pixel in 0..input_pixels.len() {
+		output_pixels.push(palette[4 * input_pixels[pixel] as usize]);
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn bpp_from_1(input_pixels: Vec<u8>) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	for index in 0..input_pixels.len() {
+		let mut byte: u8 = input_pixels[index];
+		byte = byte.reverse_bits();
+		
+		for shift in 0..8 {
+			output_pixels.push((byte >> shift) & 0x1);
+		}
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn bpp_from_2(input_pixels: Vec<u8>) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	for index in 0..input_pixels.len() {
+		output_pixels.push((input_pixels[index] >> 6) & 0x3);
+		output_pixels.push((input_pixels[index] >> 4) & 0x3);
+		output_pixels.push((input_pixels[index] >> 2) & 0x3);
+		output_pixels.push((input_pixels[index] >> 0) & 0x3);
+	}
+	
+	return output_pixels;
+}
+
+
 pub fn bpp_from_4(input_pixels: Vec<u8>) -> Vec<u8> {//, flip: bool) -> Vec<u8> {
 	let mut output_pixels: Vec<u8> = Vec::new();
 	
@@ -69,6 +110,67 @@ pub fn bpp_to_4(input_pixels: Vec<u8>, flip: bool) -> Vec<u8> {
 		}
 		
 		index += 2;
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn alpha_halve(input_palette: Vec<u8>) -> Vec<u8> {
+	let mut palette: Vec<u8> = input_palette.clone();
+	let color_count: usize = palette.len() / 4;
+	
+	for color in 0..color_count {
+		let alpha: usize = 4 * color + 3;
+		
+		if palette[alpha] == 0xFF {
+			palette[alpha] = 0x80;
+		} else {
+			palette[alpha] = palette[alpha] / 2;
+		}
+	}
+	
+	return palette;
+}
+
+
+pub fn alpha_double(input_palette: Vec<u8>) -> Vec<u8> {
+	let mut palette: Vec<u8> = input_palette.clone();
+	let color_count: usize = palette.len() / 4;
+	
+	for color in 0..color_count {
+		let alpha: usize = 4 * color + 3;
+		
+		if palette[alpha] == 0x80 {
+			palette[alpha] = 0xFF;
+		} else {
+			palette[alpha] = palette[alpha] * 2;
+		}
+	}
+	
+	return palette;
+}
+
+
+pub fn flip_h(input_pixels: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+
+	for y in 0..height {
+		for x in 0..width {
+			output_pixels.push(input_pixels[y * width + width - x - 1]);
+		}
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn flip_v(input_pixels: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	for y in 0..height {
+		let pointer: usize = (height - y - 1) * width;
+		output_pixels.extend_from_slice(&input_pixels[pointer..pointer + width]);
 	}
 	
 	return output_pixels;

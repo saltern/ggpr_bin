@@ -1,6 +1,7 @@
 use crate::{
 	fs,
 	PathBuf,
+	sprite_transform,
 	godot_api,
 	godot_print,
 	Gd,
@@ -82,7 +83,7 @@ impl BinPalette {
 		let color_count: usize = self.palette.len() / 4;
 		
 		for color in 0..color_count {
-			let new_index: usize = transform_index(color);
+			let new_index: usize = sprite_transform::transform_index(color as u8) as usize;
 			temp_pal[4 * color + 0] = self.palette[4 * new_index + 0];
 			temp_pal[4 * color + 1] = self.palette[4 * new_index + 1];
 			temp_pal[4 * color + 2] = self.palette[4 * new_index + 2];
@@ -95,49 +96,12 @@ impl BinPalette {
 	/// Alpha halving function. Halves all alpha values except for 0xFF, which is set to 0x80.
 	#[func]
 	pub fn alpha_halve(&mut self) {
-		let color_count: usize = self.palette.len() / 4;
-		
-		for color in 0..color_count {
-			let alpha: usize = 4 * color + 3;
-		
-			if self.palette[alpha] == 0xFF {
-				self.palette[alpha] = 0x80;
-			}
-			
-			else {
-				self.palette[alpha] = self.palette[alpha] / 2;
-			}
-		}
+		self.palette = sprite_transform::alpha_halve(self.palette.to_vec()).into();
 	}
 	
 	/// Alpha doubling function. Doubles all alpha values except for 0x80, which is set to 0xFF.
 	#[func]
 	pub fn alpha_double(&mut self) {
-		let color_count: usize = self.palette.len() / 4;
-		
-		for color in 0..color_count {
-			let alpha: usize = 4 * color + 3;
-			
-			if self.palette[alpha] == 0x80 {
-				self.palette[alpha] = 0xFF;
-			}
-			
-			else {
-				self.palette[alpha] = self.palette[alpha] * 2;
-			}
-		}
+		self.palette = sprite_transform::alpha_double(self.palette.to_vec()).into();
 	}
-}
-
-
-fn transform_index(mut value: usize) -> usize {
-	if ((value / 8) + 2) % 4 == 0 {
-		value -= 8;
-	}
-	
-	else if ((value / 8) + 3) % 4 == 0 {
-		value += 8
-	}
-	
-	return value;
 }

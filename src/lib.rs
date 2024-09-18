@@ -11,13 +11,14 @@ use godot::classes::ImageTexture;
 
 pub mod bin_sprite;
 pub mod bin_palette;
-pub mod decompressor;
+pub mod sprite_get;
+pub mod sprite_compress;
 pub mod sprite_transform;
 pub mod sort;
 
 use crate::{
 	bin_sprite::{BinHeader, BinSprite},
-	decompressor::{SpriteData},
+	sprite_compress::{SpriteData},
 };
 
 struct GodotGhoul;
@@ -92,10 +93,14 @@ impl SpriteLoader {
 			}
 			
 			let bin_header: BinHeader = bin_sprite::get_header(bin_data.clone());
-			let sprite_data: SpriteData;
+			let mut sprite_data: SpriteData;
 			
 			if bin_header.compressed {
-				sprite_data = decompressor::decompress(bin_data, bin_header, reindex);
+				sprite_data = sprite_compress::decompress(bin_data, bin_header);
+				
+				if reindex && sprite_data.bit_depth == 8 {
+					sprite_data.pixels = sprite_transform::reindex_vector(sprite_data.pixels);
+				}
 			}
 		
 			// Handle uncompressed
@@ -169,6 +174,191 @@ impl SpriteLoader {
 		}
 		
 		return sprite_vector;
+	}
+}
+
+
+#[derive(GodotClass)]
+#[class(tool, base=Resource)]
+/// Rust GGXXAC+R sprite importer, based on Ghoul.
+struct SpriteImporter {
+	base: Base<Resource>,
+}
+
+
+#[godot_api]
+impl IResource for SpriteImporter{
+	fn init(base: Base<Resource>) -> Self {
+		Self {
+			base: base,
+		}
+	}
+}
+
+
+#[godot_api]
+impl SpriteImporter {
+	/// Imports the given sprites.
+	#[func]
+	fn import_sprites(
+		sprites: PackedStringArray,
+		embed_palette: bool,
+		halve_alpha: bool,
+		flip_h: bool,
+		flip_v: bool,
+		as_rgb: bool,
+		reindex: bool,
+		bit_depth: i64,
+	) -> Array<Gd<BinSprite>> {
+		let file_vector: Vec<GString> = sprites.to_vec();
+		let mut sprite_vector: Array<Gd<BinSprite>> = array![];
+		
+		for item in file_vector {
+			match Self::import_sprite(
+				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb, reindex, bit_depth
+			) {
+				Some(bin_sprite) => sprite_vector.push(bin_sprite),
+				None => continue,
+			}
+		}
+		
+		return sprite_vector;
+	}
+	
+	
+	#[func]
+	fn import_sprite(
+		file_path: GString,
+		embed_palette: bool,
+		halve_alpha: bool,
+		flip_h: bool,
+		flip_v: bool,
+		as_rgb: bool,
+		reindex: bool,
+		bit_depth: i64,
+	) -> Option<Gd<BinSprite>> {
+		let file_string: String = String::from(file_path);
+		let file: PathBuf = PathBuf::from(file_string);
+		
+		if !file.exists() {
+			return None;
+		}
+		
+		let mut data: SpriteData = SpriteData::default();
+		
+		match file.extension() {
+			Some(os_str) => match os_str.to_ascii_lowercase().to_str() {
+				Some("png") => data = sprite_get::get_png(&file),
+				Some("raw") => data = sprite_get::get_raw(&file),
+				Some("bin") => data = sprite_get::get_bin(&file),
+				Some("bmp") => data = sprite_get::get_bmp(&file),
+				_ => godot_print!("lib::import_sprites() error: Invalid source format provided"),
+			},
+			
+			_ => godot_print!("lib::import_sprites() error: Invalid source format provided"),
+		}
+		
+		if data.width == 0 || data.height == 0 {
+			godot_print!("Skipping file as it is empty");
+			godot_print!("\tFile: {:?}", file);
+			return None;
+		}
+		
+		// Embed palette
+		if embed_palette && !data.palette.is_empty() {
+			let mut temp_palette: Vec<u8> = data.palette;
+			let color_count: usize = 2usize.pow(data.bit_depth as u32);
+			
+			// Expand palette
+			if temp_palette.len() < 4 * color_count {
+				for index in 0..color_count - (temp_palette.len() / 4) {
+					// RGB
+					temp_palette.push(0x00);
+					temp_palette.push(0x00);
+					temp_palette.push(0x00);
+					
+					// Default alpha
+					if (index / 16) % 2 == 0 && index % 8 == 0 && index != 8 {
+						temp_palette.push(0x00);
+					} else {
+						temp_palette.push(0x80);
+					}
+				}
+			}
+			
+			// Truncate palette
+			else {
+				temp_palette.resize(color_count * 4, 0u8);
+			}
+			
+			data.palette = temp_palette;
+		}
+		
+		// Don't embed palette
+		else {
+			data.palette = Vec::new();
+		}
+		
+		// Halve alpha
+		if halve_alpha {
+			data.palette = sprite_transform::alpha_halve(data.palette);
+		}
+		
+		// Flip H/V
+		if flip_h {
+			data.pixels = sprite_transform::flip_h(data.pixels, data.width as usize, data.height as usize);
+		}
+		
+		if flip_v {
+			data.pixels = sprite_transform::flip_v(data.pixels, data.width as usize, data.height as usize);
+		}
+		
+		// As RGB
+		if as_rgb && !data.palette.is_empty() {
+			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
+		}
+		
+		// Reindex
+		if reindex {
+			data.pixels = sprite_transform::reindex_vector(data.pixels);
+		}
+		
+		// Forced bit depth
+		match bit_depth {
+			1 => data.bit_depth = 4,
+			2 => data.bit_depth = 8,
+			_ => data.bit_depth = std::cmp::max(data.bit_depth, 4),
+		}
+		
+		// Now, create BinSprite.
+		let image: Gd<Image>;
+		
+		match Image::create_from_data(
+			// Width
+			data.width as i32,
+			// Height
+			data.height as i32,
+			// Mipmapping
+			false,
+			// Grayscale format
+			Format::L8,
+			// Pixel array
+			PackedByteArray::from(data.pixels.clone())
+		) {
+			Some(gd_image) => image = gd_image,
+			_ => return None,
+		}
+		
+		return Some(BinSprite::new_from_data(
+			// Pixels
+			PackedByteArray::from(data.pixels),
+			// Image
+			image,
+			// Color depth
+			data.bit_depth,
+			// Palette
+			PackedByteArray::from(data.palette)
+		));
 	}
 }
 

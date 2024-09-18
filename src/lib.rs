@@ -264,6 +264,11 @@ impl SpriteImporter {
 			return None;
 		}
 		
+		// As RGB (needs to happen before palette embed)
+		if as_rgb && !data.palette.is_empty() {
+			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
+		}
+		
 		// Embed palette
 		if embed_palette && !data.palette.is_empty() {
 			let mut temp_palette: Vec<u8> = data.palette;
@@ -311,11 +316,6 @@ impl SpriteImporter {
 		
 		if flip_v {
 			data.pixels = sprite_transform::flip_v(data.pixels, data.width as usize, data.height as usize);
-		}
-		
-		// As RGB
-		if as_rgb && !data.palette.is_empty() {
-			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
 		}
 		
 		// Reindex

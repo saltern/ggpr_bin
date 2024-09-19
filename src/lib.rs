@@ -198,9 +198,14 @@ impl IResource for SpriteImporter{
 
 #[godot_api]
 impl SpriteImporter {
+	/// Signals import progress.
+	#[signal]
+	fn sprite_imported();
+	
 	/// Imports the given sprites.
 	#[func]
 	fn import_sprites(
+		&mut self,
 		sprites: PackedStringArray,
 		embed_palette: bool,
 		halve_alpha: bool,
@@ -220,11 +225,13 @@ impl SpriteImporter {
 				Some(bin_sprite) => sprite_vector.push(bin_sprite),
 				None => continue,
 			}
+			
+			// This is dumb as hell
+			self.base_mut().call_deferred("emit_signal".into(), &["sprite_imported".to_variant()]);
 		}
 		
 		return sprite_vector;
 	}
-	
 	
 	#[func]
 	fn import_sprite(

@@ -1,16 +1,17 @@
 use std::fs;
 use std::fs::File;
+use std::path::PathBuf;
+
 use bmp_rust::bmp::{BMP, BITMAPFILEHEADER, DIBHEADER};
 
-use crate::{
-	PathBuf,
-	SpriteData,
-	bin_sprite,
-	BinHeader,
-	sprite_compress,
-	sprite_transform,
-	godot_print,
-};
+use godot::prelude::*;
+
+use crate::bin_sprite;
+use crate::sprite_compress;
+use crate::sprite_transform;
+
+use bin_sprite::BinHeader;
+use sprite_compress::SpriteData;
 
 const BITMAPCOREHEADER_SIZE: usize = 12;
 const BMP_COLOR_24: usize = 3;

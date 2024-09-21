@@ -179,6 +179,9 @@ impl SpriteLoadSave {
 			return Default::default();
 		}
 		
+		// Clear out target path first. Scary!
+		let _ = fs::remove_dir_all(&path_buf).and_then(|_| fs::create_dir(&path_buf));
+		
 		let mut sprite_number: usize = 0;
 		
 		for mut gd_sprite in sprites.iter_shared() {
@@ -234,9 +237,9 @@ impl SpriteLoadSave {
 				sprite.bit_depth,	// bit depth
 				tex_width,			// sprite width
 				tex_height,			// sprite height
-				0x00,				// tw
-				0x00,				// th
-				0x00				// hash
+				0x0000,				// tw
+				0x0000,				// th
+				0x0000				// hash
 			);
 			
 			// Write header

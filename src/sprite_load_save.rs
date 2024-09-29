@@ -41,7 +41,7 @@ impl IResource for SpriteLoadSave {
 impl SpriteLoadSave {
 	/// Loads BIN sprites in natural naming order from a specified path.
 	#[func]
-	fn load_sprites(source_path: GString, reindex: bool) -> Array<Gd<BinSprite>> {
+	fn load_sprites(source_path: GString) -> Array<Gd<BinSprite>> {
 		let path_str: String = String::from(source_path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
@@ -84,14 +84,10 @@ impl SpriteLoadSave {
 			}
 			
 			let bin_header: BinHeader = bin_sprite::get_header(bin_data.clone());
-			let mut sprite_data: SpriteData;
+			let sprite_data: SpriteData;
 			
 			if bin_header.compressed {
 				sprite_data = sprite_compress::decompress(bin_data, bin_header);
-				
-				if reindex && sprite_data.bit_depth == 8 {
-					sprite_data.pixels = sprite_transform::reindex_vector(sprite_data.pixels);
-				}
 			}
 		
 			// Handle uncompressed
@@ -112,12 +108,9 @@ impl SpriteLoadSave {
 				
 				// Get pixels
 				let mut byte_vector: Vec<u8> = bin_data[pointer..].to_vec();
-				
-				if bin_header.bit_depth == 8 && reindex {
-					byte_vector = sprite_transform::reindex_vector(byte_vector);
-				}
-				else if bin_header.bit_depth == 4 {
-					byte_vector = sprite_transform::bpp_from_4(byte_vector);
+
+				if bin_header.bit_depth == 4 {
+					byte_vector = sprite_transform::bpp_from_4(byte_vector, true);
 				}
 				
 				// Truncate
@@ -170,7 +163,7 @@ impl SpriteLoadSave {
 
 	/// Saves BIN sprites to a specified path. Overwrites existing files.
 	#[func]
-	fn save_sprites(sprites: Array<Gd<BinSprite>>, target_path: GString, reindex: bool) {
+	fn save_sprites(sprites: Array<Gd<BinSprite>>, target_path: GString) {
 		let path_str: String = String::from(target_path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
@@ -213,11 +206,7 @@ impl SpriteLoadSave {
 			let tex_width: u16 = image.get_width() as u16;
 			let tex_height: u16 = image.get_height() as u16;
 			
-			let mut pixels: Vec<u8> = sprite.pixels.to_vec();
-			
-			if reindex {
-				pixels = sprite_transform::reindex_vector(pixels);
-			}
+			let pixels: Vec<u8> = sprite.pixels.to_vec();
 			
 			let sprite_data: SpriteData = SpriteData {
 				width: tex_width,

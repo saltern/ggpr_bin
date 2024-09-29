@@ -98,10 +98,10 @@ impl SpriteImporter {
 				Some("raw") => data = sprite_get::get_raw(&file),
 				Some("bin") => data = sprite_get::get_bin(&file),
 				Some("bmp") => data = sprite_get::get_bmp(&file),
-				_ => godot_print!("lib::import_sprites() error: Invalid source format provided"),
+				_ => godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided"),
 			},
 			
-			_ => godot_print!("lib::import_sprites() error: Invalid source format provided"),
+			_ => godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided"),
 		}
 		
 		if data.width == 0 || data.height == 0 {
@@ -110,15 +110,38 @@ impl SpriteImporter {
 			return None;
 		}
 		
+		// Trim padding
+		data.pixels = sprite_transform::trim_padding(data.pixels, data.width as usize, data.height as usize);
+		
 		// As RGB (needs to happen before palette embed)
 		if as_rgb && !data.palette.is_empty() {
 			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
+		}
+		
+		// Reindex
+		if reindex {
+			data.pixels = sprite_transform::reindex_vector(data.pixels);
+		}
+		
+		// Forced bit depth
+		match bit_depth {
+			1 => {
+				data.bit_depth = 4;
+			},
+			
+			2 => data.bit_depth = 8,
+			_ => data.bit_depth = std::cmp::max(data.bit_depth, 4),
+		}
+		
+		if data.bit_depth == 4 {
+			data.pixels = sprite_transform::limit_16_colors(data.pixels);
 		}
 		
 		// Embed palette
 		if embed_palette && !data.palette.is_empty() {
 			let mut temp_palette: Vec<u8> = data.palette;
 			let color_count: usize = 2usize.pow(data.bit_depth as u32);
+			let offset: usize = temp_palette.len() / 4;
 			
 			// Expand palette
 			if temp_palette.len() < 4 * color_count {
@@ -129,7 +152,7 @@ impl SpriteImporter {
 					temp_palette.push(0x00);
 					
 					// Default alpha
-					if (index / 16) % 2 == 0 && index % 8 == 0 && index != 8 {
+					if ((offset + index) / 16) % 2 == 0 && (offset + index) % 8 == 0 && (offset + index) != 8 {
 						temp_palette.push(0x00);
 					} else {
 						temp_palette.push(0x80);
@@ -162,18 +185,6 @@ impl SpriteImporter {
 		
 		if flip_v {
 			data.pixels = sprite_transform::flip_v(data.pixels, data.width as usize, data.height as usize);
-		}
-		
-		// Reindex
-		if reindex {
-			data.pixels = sprite_transform::reindex_vector(data.pixels);
-		}
-		
-		// Forced bit depth
-		match bit_depth {
-			1 => data.bit_depth = 4,
-			2 => data.bit_depth = 8,
-			_ => data.bit_depth = std::cmp::max(data.bit_depth, 4),
 		}
 		
 		// Now, create BinSprite.
@@ -377,11 +388,12 @@ impl SpriteExporter {
 		let mut encoder = png::Encoder::new(buffer, width, height);
 		
 		// 4 bpp handling
-		let working_pixels: Vec<u8>;
+		let mut working_pixels: Vec<u8>;
 		
 		match sprite.bit_depth {
 			4 => {
-				working_pixels = sprite_transform::bpp_to_4(sprite.pixels.to_vec(), false);
+				working_pixels = sprite_transform::align_to_4(sprite.pixels.to_vec(), height as usize);
+				working_pixels = sprite_transform::bpp_to_4(working_pixels, false);
 				encoder.set_depth(png::BitDepth::Four);
 			},
 			
@@ -548,9 +560,6 @@ impl SpriteExporter {
 		let mut color_table: Vec<u8> = Vec::with_capacity(768);
 		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
 		
-		// if palette.is_empty() || palette_override: external_palette
-		// else sprite_palette
-		
 		// Grayscale
 		if sprite.palette.is_empty() || palette_override || !palette_include {
 			for index in 0..color_count {
@@ -581,11 +590,15 @@ impl SpriteExporter {
 		let _ = buffer.write_all(&header);
 		let _ = buffer.write_all(&color_table);
 		
-		let byte_vector: Vec<u8>;
+		let mut byte_vector: Vec<u8>;
 		
 		match sprite.bit_depth {
 			// 1 and 2 bpp not currently in use
-			4 => byte_vector = sprite_transform::bpp_to_4(sprite.pixels.to_vec(), false),
+			4 => {
+				byte_vector = sprite_transform::align_to_4(sprite.pixels.to_vec(), height as usize);
+				byte_vector = sprite_transform::bpp_to_4(byte_vector, false);
+			},
+			
 			8 => {
 				if reindex {
 					byte_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());

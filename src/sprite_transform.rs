@@ -71,14 +71,23 @@ pub fn bpp_from_2(input_pixels: Vec<u8>) -> Vec<u8> {
 }
 
 
-pub fn bpp_from_4(input_pixels: Vec<u8>) -> Vec<u8> {//, flip: bool) -> Vec<u8> {
+pub fn bpp_from_4(input_pixels: Vec<u8>, flip: bool) -> Vec<u8> {
 	let mut output_pixels: Vec<u8> = Vec::new();
 	
 	// When decompressing a 4 bpp sprite, the resulting pixel vector will contain
 	// two pixels per byte (0000-0000). Separate and push them to output.
-	for index in 0..input_pixels.len() {
-		output_pixels.push(input_pixels[index] & 0xF);
-		output_pixels.push(input_pixels[index] >> 4);
+	if flip {
+		for index in 0..input_pixels.len() {
+			output_pixels.push(input_pixels[index] & 0xF);
+			output_pixels.push(input_pixels[index] >> 4);
+		}
+	}
+	
+	else {
+		for index in 0..input_pixels.len() {
+			output_pixels.push(input_pixels[index] >> 4);
+			output_pixels.push(input_pixels[index] & 0xF);
+		}
 	}
 	
 	return output_pixels;
@@ -110,6 +119,51 @@ pub fn bpp_to_4(input_pixels: Vec<u8>, flip: bool) -> Vec<u8> {
 		}
 		
 		index += 2;
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn align_to_4(input_pixels: Vec<u8>, height: usize) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	let width: usize = input_pixels.len() / height;
+	let padding: usize = width % 2;
+	
+	for y in 0..height {
+		for x in 0..width {
+			output_pixels.push(input_pixels[y * width + x]);
+		}
+		
+		for _x in 0..padding {
+			output_pixels.push(0x00);
+		}
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn trim_padding(input_pixels: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	let row_width: usize = input_pixels.len() / height;
+	
+	for y in 0..height {
+		for x in 0..width {
+			output_pixels.push(input_pixels[y * row_width + x]);
+		}
+	}
+	
+	return output_pixels;
+}
+
+
+pub fn limit_16_colors(input_pixels: Vec<u8>) -> Vec<u8> {
+	let mut output_pixels: Vec<u8> = Vec::new();
+	
+	for pixel in 0..input_pixels.len() {
+		output_pixels.push(cmp::min(input_pixels[pixel], 0xF));
 	}
 	
 	return output_pixels;

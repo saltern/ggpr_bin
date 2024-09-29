@@ -121,7 +121,7 @@ pub fn get_png(source_file: &PathBuf) -> SpriteData {
 		
 		png::BitDepth::Four => {
 			bit_depth = 4;
-			pixel_vector = sprite_transform::bpp_from_4(pixel_vector);
+			pixel_vector = sprite_transform::bpp_from_4(pixel_vector, false);
 		},
 		
 		_ => (),	// Hope and pray
@@ -202,6 +202,16 @@ pub fn get_bin(source_file: &PathBuf) -> SpriteData {
 		},
 	}
 	
+	if bin_data.len() < 0x20 {
+		godot_print!("Input .BIN file has less than 32 bytes, skipping.");
+		return SpriteData::default();
+	}
+	
+	if bin_data[0x00] > 0x01 {
+		godot_print!("Input .BIN file not a sprite, skipping.");
+		return SpriteData::default();
+	}
+	
 	let header: BinHeader = bin_sprite::get_header(bin_data[0x0..0x10].to_vec());
 	
 	if header.compressed {
@@ -273,9 +283,13 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		},
 	}
 	
+	let width: usize = dib_header.width as usize;
+	let height: usize = dib_header.height.abs() as usize;
+	let bit_depth: usize = dib_header.bitcount as usize;
+	
 	// Cheers Wikipedia
-	let row_size: usize = (((dib_header.bitcount as usize) * (dib_header.width as usize) + 31) / 32) * 4;
-	let pixel_array_len: usize = row_size * dib_header.height.abs() as usize;
+	let row_size: usize = ((bit_depth * width + 31) / 32) * 4;
+	let pixel_array_len: usize = row_size * height;
 	
 	let start: usize = file_header.bfOffBits as usize;
 	
@@ -286,7 +300,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 	match dib_header.bitcount {
 		1 => pixel_array = sprite_transform::bpp_from_1(pixel_array),
 		2 => pixel_array = sprite_transform::bpp_from_2(pixel_array),
-		4 => pixel_array = sprite_transform::bpp_from_4(pixel_array),
+		4 => pixel_array = sprite_transform::bpp_from_4(pixel_array, false),
 		8 => (),
 		_ => {
 			godot_print!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
@@ -296,24 +310,23 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 	}
 	
 	// Trim padding
+	let expanded_width: usize = pixel_array.len() / height;
 	let mut pixel_vector: Vec<u8> = Vec::new();
-	let u_width: usize = dib_header.width as usize;
-	let u_height: usize = dib_header.height as usize;
 	
-	for y in (0..u_height).rev() {
-		for x in 0..u_width {
-			pixel_vector.push(pixel_array[y * u_width + x]);
+	for y in (0..height).rev() {
+		for x in 0..width {
+			pixel_vector.push(pixel_array[y * expanded_width + x]);
 		}
 	}
 	
 	// Invalid BMP	
-	if std::cmp::max(dib_header.width, dib_header.height.abs() as u32) > u16::MAX as u32 {
+	if std::cmp::max(width, height) > u16::MAX as usize {
 		godot_print!("sprite_get::get_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
 		godot_print!("\tSkipped: {}", &source_file.display());
 		return SpriteData::default();
 	}
 	
-	if pixel_vector.len() != (dib_header.width * dib_header.height.abs() as u32) as usize {
+	if pixel_vector.len() != width * height {
 		godot_print!("sprite_get::get_bmp() error: bad BMP: pixel count mismatches image dimensions, result may differ");
 		godot_print!("\tFile: {}", &source_file.display());
 		pixel_vector.resize((dib_header.width * dib_header.height.abs() as u32) as usize, 0u8);
@@ -345,11 +358,11 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 	let color_count: usize;
 	match dib_header.ClrUsed {
 		Some(value) => match value {
-			0 => color_count = 2u16.pow(dib_header.bitcount as u32) as usize,
+			0 => color_count = 2u16.pow(bit_depth as u32) as usize,
 			_ => color_count = value as usize,
 		},
 		
-		None => color_count = 2u16.pow(dib_header.bitcount as u32) as usize,
+		None => color_count = 2u16.pow(bit_depth as u32) as usize,
 	}
 	
 	// Create and populate palette
@@ -360,7 +373,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		palette[4 * color + 1] = bmp.contents[index + (color_size * color + 1)];
 		palette[4 * color + 2] = bmp.contents[index + (color_size * color + 0)];
 		
-		// 24 bit BMP input will use default +R alpha
+		//
 		if color % 32 == 0 || (color as i32 - 8) % 32 == 0 && color != 8 {
 			palette[4 * color + 3] = 0x00;
 		}
@@ -370,9 +383,9 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 	}
 	
 	return SpriteData {
-		width: dib_header.width as u16,
-		height: dib_header.height as u16,
-		bit_depth: dib_header.bitcount as u16,
+		width: width as u16,
+		height: height as u16,
+		bit_depth: bit_depth as u16,
 		pixels: pixel_vector,
 		palette: palette,
 	}

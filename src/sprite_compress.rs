@@ -218,7 +218,7 @@ pub fn decompress(bin_data: Vec<u8>, header: BinHeader) -> SpriteData {
 	
 	// Bit depth management
 	match header.bit_depth {
-		4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector),
+		4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector, true),
 		8 => (),
 		// Shouldn't ever happen
 		_ => panic!("sprite_compress::decompress() error: Invalid BIN bit depth"),

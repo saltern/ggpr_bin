@@ -83,6 +83,10 @@ impl SpriteLoadSave {
 				_ => continue,
 			}
 			
+			if bin_data.len() < 0x20 {
+				continue;
+			}
+			
 			let bin_header: BinHeader = bin_sprite::get_header(bin_data.clone());
 			let sprite_data: SpriteData;
 			
@@ -177,7 +181,7 @@ impl SpriteLoadSave {
 		
 		let mut sprite_number: usize = 0;
 		
-		for mut gd_sprite in sprites.iter_shared() {
+		for gd_sprite in sprites.iter_shared() {
 			// Create file
 			let mut target_file: PathBuf = path_buf.clone();
 			target_file.push(format!("sprite_{}.bin", sprite_number));
@@ -199,7 +203,7 @@ impl SpriteLoadSave {
 			// OK to write
 			
 			// Get data
-			let binding = gd_sprite.bind_mut();
+			let binding = gd_sprite.bind();
 			let sprite: &BinSprite = binding.deref();
 			
 			let image: &Image = sprite.image.as_ref().unwrap();
@@ -207,13 +211,14 @@ impl SpriteLoadSave {
 			let tex_height: u16 = image.get_height() as u16;
 			
 			let pixels: Vec<u8> = sprite.pixels.to_vec();
+			let palette: Vec<u8> = sprite.palette.to_vec();
 			
 			let sprite_data: SpriteData = SpriteData {
 				width: tex_width,
 				height: tex_height,
 				bit_depth: sprite.bit_depth,
 				pixels: pixels,
-				palette: sprite.palette.to_vec(),
+				palette: palette,
 			};
 			
 			let clut: u16;

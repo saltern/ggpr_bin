@@ -223,6 +223,18 @@ impl SpriteLoadSave {
 			
 			let clut: u16;
 			if sprite_data.palette.is_empty() { clut = 0x0000; } else { clut = 0x0020; }
+			let palette_clone: Vec<u8> = sprite_data.palette.clone();
+			let palette_slice: &[u8] = palette_clone.as_slice();
+			
+			// Compress
+			let compressed_data: CompressedData = sprite_compress::compress(sprite_data);
+	
+			// Generate hash
+			let mut hash: u16 = 0;
+			
+			for byte in 0..compressed_data.stream.len() / 2 {
+				hash = hash ^ (compressed_data.stream[byte] as u16 | (compressed_data.stream[byte + 1] as u16) << 8);
+			}
 			
 			// Get bytes
 			let header_bytes: Vec<u8> = bin_sprite::make_header(
@@ -233,17 +245,14 @@ impl SpriteLoadSave {
 				tex_height,			// sprite height
 				0x0000,				// tw
 				0x0000,				// th
-				0x0000				// hash
+				hash				// hash
 			);
 			
 			// Write header
 			let _ = buffer.write_all(&header_bytes);
 			
 			// Write palette
-			let _ = buffer.write_all(sprite_data.palette.as_slice());
-			
-			// Compress
-			let compressed_data: CompressedData = sprite_compress::compress(sprite_data);
+			let _ = buffer.write_all(palette_slice);
 			
 			// Write iterations
 			let iterations_u32: u32 = compressed_data.iterations as u32;

@@ -161,18 +161,18 @@ impl BinPalette {
 		
 		// Create palette with alpha
 		let mut palette: Vec<u8> = Vec::new();
-	
-		for color in 0..256 {
+		
+		// Index #0
+		palette.push(act_data[0]);
+		palette.push(act_data[1]);
+		palette.push(act_data[2]);
+		palette.push(0x00);
+		
+		for color in 1..256 {
 			palette.push(act_data[3 * color + 0]);
 			palette.push(act_data[3 * color + 1]);
 			palette.push(act_data[3 * color + 2]);
-			
-			if color % 32 == 0 || (color as i32 - 8) % 32 == 0 && color != 8 {
-				palette.push(0x00);
-			}
-			else {
-				palette.push(0x80);
-			}
+			palette.push(0x80);
 		}
 		
 		return Gd::from_init_fn(|base| {

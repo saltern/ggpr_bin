@@ -34,13 +34,13 @@ impl IResource for BinPalette {
 impl BinPalette {
 	/// Static constructor for BinPalettes from .bin files.
 	#[func]
-	pub fn from_bin_file(path: GString) -> Gd<Self> {
+	pub fn from_bin_file(path: GString) -> Option<Gd<Self>> {
 		let path_str: String = String::from(path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find palette file!");
-			return Default::default();
+			return None;
 		}
 		
 		let bin_data: Vec<u8>;
@@ -50,14 +50,14 @@ impl BinPalette {
 			
 			_ => {
 				godot_print!("Could not load palette file!");
-				return Default::default();
+				return None;
 			},
 		}
 		
 		// Check 'clut' byte
 		if bin_data[0x02] != 0x20 {
 			godot_print!("BIN file does not contain a palette.");
-			return Default::default();
+			return None;
 		}
 		
 		// Get palette
@@ -69,76 +69,92 @@ impl BinPalette {
 			palette = bin_data[0x10..0x410].to_vec();
 		}
 		
-		return Gd::from_init_fn(|base| {
-			Self {
-				base: base,
-				palette: PackedByteArray::from(palette),
-			}
-		});
+		return Some(
+			Gd::from_init_fn(|base| {
+				Self {
+					base: base,
+					palette: PackedByteArray::from(palette),
+				}
+			})
+		);
 	}
 	
 	
 	/// Static constructor for BinPalettes from .png files.
 	#[func]
-	pub fn from_png_file(path: GString) -> Gd<Self> {
+	pub fn from_png_file(path: GString) -> Option<Gd<Self>> {
 		let path_str: String = String::from(path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find palette file!");
-			return Default::default();
+			return None;
 		}
 		
-		let sprite_data: SpriteData = sprite_get::get_png(&path_buf);
+		let sprite_data: SpriteData;
+		
+		match sprite_get::get_png(&path_buf) {
+			None => return None,
+			Some(data) => sprite_data = data,
+		}
 		
 		if sprite_data.palette.is_empty() {
-			return Default::default();
+			return None;
 		}
 		
-		return Gd::from_init_fn(|base| {
-			Self {
-				base: base,
-				palette: PackedByteArray::from(sprite_data.palette),
-			}
-		});
+		return Some(
+			Gd::from_init_fn(|base| {
+				Self {
+					base: base,
+					palette: PackedByteArray::from(sprite_data.palette),
+				}
+			})
+		);
 	}
 	
 	
 	/// Static constructor for BinPalettes from .bmp files.
 	#[func]
-	pub fn from_bmp_file(path: GString) -> Gd<Self> {
+	pub fn from_bmp_file(path: GString) -> Option<Gd<Self>> {
 		let path_str: String = String::from(path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find palette file!");
-			return Default::default();
+			return None;
 		}
 		
-		let sprite_data: SpriteData = sprite_get::get_bmp(&path_buf);
+		let sprite_data: SpriteData;
+		
+		match sprite_get::get_bmp(&path_buf) {
+			None => return None,
+			Some(data) => sprite_data = data,
+		}
 		
 		if sprite_data.palette.is_empty() {
-			return Default::default();
+			return None;
 		}
 		
-		return Gd::from_init_fn(|base| {
-			Self {
-				base: base,
-				palette: PackedByteArray::from(sprite_data.palette),
-			}
-		});
+		return Some(
+			Gd::from_init_fn(|base| {
+				Self {
+					base: base,
+					palette: PackedByteArray::from(sprite_data.palette),
+				}
+			})
+		);
 	}
 	
 	
 	/// Static constructor for BinPalettes from .act files.
 	#[func]
-	pub fn from_act_file(path: GString) -> Gd<Self> {
+	pub fn from_act_file(path: GString) -> Option<Gd<Self>> {
 		let path_str: String = String::from(path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find palette file!");
-			return Default::default();
+			return None;
 		}
 		
 		let act_data: Vec<u8>;
@@ -147,7 +163,7 @@ impl BinPalette {
 			Ok(data) => {
 				if data.len() < 0x304 {
 					godot_print!("Invalid .ACT file!");
-					return Default::default();
+					return None;
 				}
 				
 				act_data = data;
@@ -155,7 +171,7 @@ impl BinPalette {
 			
 			_ => {
 				godot_print!("Errored while reading .ACT file!");
-				return Default::default();
+				return None;
 			}
 		}
 		
@@ -175,12 +191,14 @@ impl BinPalette {
 			palette.push(0x80);
 		}
 		
-		return Gd::from_init_fn(|base| {
-			Self {
-				base: base,
-				palette: PackedByteArray::from(palette),
-			}
-		})
+		return Some(
+			Gd::from_init_fn(|base| {
+				Self {
+					base: base,
+					palette: PackedByteArray::from(palette),
+				}
+			})
+		);
 	}
 	
 	

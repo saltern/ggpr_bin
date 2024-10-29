@@ -10,11 +10,10 @@ use godot::classes::Image;
 use godot::classes::image::Format;
 
 use crate::bin_sprite;
+use crate::sprite_get;
 use crate::sprite_compress;
-use crate::sprite_transform;
 
 use bin_sprite::BinSprite;
-use bin_sprite::BinHeader;
 use sprite_compress::SpriteData;
 use sprite_compress::CompressedData;
 
@@ -66,102 +65,78 @@ impl SpriteLoadSave {
 		let mut sprite_vector: Array<Gd<BinSprite>> = array![];
 		
 		for item in file_vector {
-			match item.extension() {
-				Some(value) => {
-					if value != "bin" {
-						continue
-					}
-				},
-				
-				_ => continue,
+			match Self::load_sprite_file(item) {
+				Some(sprite) => sprite_vector.push(sprite),
+				None => continue,
 			}
-			
-			let bin_data: Vec<u8>;
-			
-			match fs::read(item) {
-				Ok(data) => bin_data = data,
-				_ => continue,
-			}
-			
-			if bin_data.len() < 0x20 {
-				continue;
-			}
-			
-			let bin_header: BinHeader = bin_sprite::get_header(bin_data.clone());
-			let sprite_data: SpriteData;
-			
-			if bin_header.compressed {
-				sprite_data = sprite_compress::decompress(bin_data, bin_header);
-			}
-		
-			// Handle uncompressed
-			else {
-				let mut pointer: usize = 0x10;
-				let palette: Vec<u8>;
-				
-				// Have embedded palette
-				if bin_header.clut == 0x20 {
-					let color_count: usize = 2usize.pow(bin_header.bit_depth as u32);
-					palette = bin_data[0x10..0x10 + color_count * 4].to_vec();
-					pointer = 0x10 + color_count * 4;
-				}
-				
-				else {
-					palette = Vec::new();
-				}
-				
-				// Get pixels
-				let mut byte_vector: Vec<u8> = bin_data[pointer..].to_vec();
-
-				if bin_header.bit_depth == 4 {
-					byte_vector = sprite_transform::bpp_from_4(byte_vector, true);
-				}
-				
-				// Truncate
-				byte_vector.resize((bin_header.width as usize) * (bin_header.height as usize), 0u8);
-				
-				sprite_data = SpriteData {
-					width: bin_header.width,
-					height: bin_header.height,
-					bit_depth: bin_header.bit_depth,
-					pixels: byte_vector,
-					palette: palette,
-				}
-			}
-			
-			let image: Gd<Image>;
-			
-			match Image::create_from_data(
-				// Width
-				sprite_data.width as i32,
-				// Height
-				sprite_data.height as i32,
-				// Mipmapping
-				false,
-				// Grayscale format
-				Format::L8,
-				// Pixel array
-				PackedByteArray::from(sprite_data.pixels.clone())
-			) {
-				Some(gd_image) => image = gd_image,
-				_ => continue,
-			}
-			
-			sprite_vector.push(
-				BinSprite::new_from_data(
-					// Pixels
-					PackedByteArray::from(sprite_data.pixels),
-					// Image
-					image,
-					// Color depth
-					sprite_data.bit_depth,
-					// Palette
-					PackedByteArray::from(sprite_data.palette)
-				)
-			);
 		}
 		
 		return sprite_vector;
+	}
+	
+	// Part of the loading function that deals with a sprite stored in the file system.
+	fn load_sprite_file(file: PathBuf) -> Option<Gd<BinSprite>> {
+		match file.extension() {
+			Some(os_str) => {
+				if os_str.to_ascii_lowercase().to_str() != Some("bin") {
+					return None;
+				}
+			},
+			
+			_ => return None,
+		}
+	
+		match fs::read(file) {
+			Ok(data) => return Self::load_sprite_data(data),
+			_ => return None,
+		}
+	}
+	
+	// Part of the loading function that deals with a raw sprite data vector.
+	fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
+		let sprite_data: SpriteData;
+
+		match sprite_get::get_bin_data(bin_data) {
+			None => return None,
+			Some(data) => {
+				if data.width == 0 || data.height == 0 {
+					return None;
+				}
+				
+				sprite_data = data;
+			}
+		}
+		
+		let image_option: Option<Gd<Image>> = Image::create_from_data(
+			// Dimensions
+			sprite_data.width as i32,
+			sprite_data.height as i32,
+			// Mipmapping
+			false,
+			// Grayscale format
+			Format::L8,
+			// Pixel array
+			&PackedByteArray::from(sprite_data.pixels.clone())
+		);
+		
+		match image_option {
+			Some(image) => {
+				return Some(
+					BinSprite::new_from_data(
+						// Pixels
+						PackedByteArray::from(sprite_data.pixels),
+						// Image
+						image,
+						// Color depth
+						sprite_data.bit_depth,
+						// Palette
+						PackedByteArray::from(sprite_data.palette)
+					)
+				);
+			},
+			
+			_ => return None,
+		}
 	}
 
 
@@ -176,11 +151,8 @@ impl SpriteLoadSave {
 			return Default::default();
 		}
 		
-		// Clear out target path first. Scary!
-		let _ = fs::remove_dir_all(&path_buf).and_then(|_| fs::create_dir(&path_buf));
-		
 		let mut sprite_number: usize = 0;
-		
+
 		for gd_sprite in sprites.iter_shared() {
 			// Create file
 			let mut target_file: PathBuf = path_buf.clone();

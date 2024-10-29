@@ -18,7 +18,28 @@ const BMP_COLOR_24: usize = 3;
 const BMP_COLOR_32: usize = 4;
 
 
-pub fn get_png(source_file: &PathBuf) -> SpriteData {
+pub fn get_sprite_file(source_file: &PathBuf) -> Option<SpriteData> {
+	match source_file.extension() {
+		Some(os_str) => match os_str.to_ascii_lowercase().to_str() {
+			Some("png") => return get_png(source_file),
+			Some("raw") => return get_raw(source_file),
+			Some("bin") => return get_bin(source_file),
+			Some("bmp") => return get_bmp(source_file),
+			_ => {
+				godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided");
+				return None;
+			},
+		},
+		
+		_ => {
+			godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided");
+			return None;
+		}
+	}
+}
+
+
+pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 	// Get info
 	let file: File;
 	match File::open(&source_file) {
@@ -26,7 +47,7 @@ pub fn get_png(source_file: &PathBuf) -> SpriteData {
 		_ => {
 			godot_print!("sprite_get::get_png() error: PNG file open error");
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
 	
@@ -127,17 +148,19 @@ pub fn get_png(source_file: &PathBuf) -> SpriteData {
 		_ => (),	// Hope and pray
 	}
 
-	return SpriteData {
-		width: reader.info().width as u16,
-		height: reader.info().height as u16,
-		bit_depth: bit_depth,
-		pixels: pixel_vector,
-		palette: palette,
-	}
+	return Some(
+		SpriteData {
+			width: reader.info().width as u16,
+			height: reader.info().height as u16,
+			bit_depth: bit_depth,
+			pixels: pixel_vector,
+			palette: palette,
+		}
+	);
 }
 
 
-pub fn get_raw(source_file: &PathBuf) -> SpriteData {
+pub fn get_raw(source_file: &PathBuf) -> Option<SpriteData> {
 	// Find if the RAW file has specified its dimensions
 	let mut width: u16 = 0;
 	let mut height: u16 = 0;
@@ -161,61 +184,63 @@ pub fn get_raw(source_file: &PathBuf) -> SpriteData {
 	if width == 0 {
 		godot_print!("Warning: will not process RAW as its width was not specified");
 		godot_print!("\tSkipped: {}", &source_file.display());
-		return SpriteData::default();
+		return None;
 	}
 	
 	if height == 0 {
 		godot_print!("Warning: will not process RAW as its height was not specified");
 		godot_print!("\tSkipped: {}", &source_file.display());
-		return SpriteData::default();
+		return None;
 	}
 
 	// All good, return raw data
 	match fs::read(source_file) {
-		Ok(data) => {
-			return SpriteData {
+		Ok(data) => return Some(
+			SpriteData {
 				width: width,
 				height: height,
 				bit_depth: 8,
 				pixels: data,
 				palette: vec![],
 			}
-		},
+		),
+		
 		_ => {
 			godot_print!("sprite_get::get_raw() error: RAW file read error");
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
 }
 
 
-pub fn get_bin(source_file: &PathBuf) -> SpriteData {
-	// Figure out if the sprite is compressed or not
-	let bin_data: Vec<u8>;
+pub fn get_bin(source_file: &PathBuf) -> Option<SpriteData> {
 	match fs::read(source_file) {
-		Ok(value) => bin_data = value,
+		Ok(bin_data) => return get_bin_data(bin_data),
 		_ => {
 			godot_print!("sprite_get::get_bin() error: BIN file read error");
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
-	
+}
+
+
+pub fn get_bin_data(bin_data: Vec<u8>) -> Option<SpriteData> {
 	if bin_data.len() < 0x20 {
 		godot_print!("Input .BIN file has less than 32 bytes, skipping.");
-		return SpriteData::default();
+		return None;
 	}
 	
 	if bin_data[0x00] > 0x01 {
 		godot_print!("Input .BIN file not a sprite, skipping.");
-		return SpriteData::default();
+		return None;
 	}
 	
 	let header: BinHeader = bin_sprite::get_header(bin_data[0x0..0x10].to_vec());
 	
 	if header.compressed {
-		return sprite_compress::decompress(bin_data, header);
+		return Some(sprite_compress::decompress(bin_data, header));
 	}
 	
 	else {
@@ -241,18 +266,20 @@ pub fn get_bin(source_file: &PathBuf) -> SpriteData {
 		let mut pixels: Vec<u8> = vec![0; bin_data.len() - pointer];
 		pixels.copy_from_slice(&bin_data[pointer..]);
 		
-		return SpriteData {
-			width: header.width,
-			height: header.height,
-			bit_depth: header.bit_depth,
-			pixels: pixels,
-			palette: palette,
-		}
+		return Some(
+			SpriteData {
+				width: header.width,
+				height: header.height,
+				bit_depth: header.bit_depth,
+				pixels: pixels,
+				palette: palette,
+			}
+		);
 	}
 }
 
 
-pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
+pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 	// Not using BMP::new_from_file as it does not account for
 	// failing to read from a file and will panic if it does
 	
@@ -263,7 +290,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		_ => {
 			godot_print!("sprite_get::get_bmp() error: BMP file read error");
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
 	
@@ -279,7 +306,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		_ => {
 			godot_print!("sprite_get::get_bmp() error: Could not read DIB header");
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
 	
@@ -305,7 +332,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		_ => {
 			godot_print!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
 			godot_print!("\tSkipped: {}", &source_file.display());
-			return SpriteData::default();
+			return None;
 		},
 	}
 	
@@ -323,7 +350,7 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 	if std::cmp::max(width, height) > u16::MAX as usize {
 		godot_print!("sprite_get::get_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
 		godot_print!("\tSkipped: {}", &source_file.display());
-		return SpriteData::default();
+		return None;
 	}
 	
 	if pixel_vector.len() != width * height {
@@ -382,11 +409,13 @@ pub fn get_bmp(source_file: &PathBuf) -> SpriteData {
 		}
 	}
 	
-	return SpriteData {
-		width: width as u16,
-		height: height as u16,
-		bit_depth: bit_depth as u16,
-		pixels: pixel_vector,
-		palette: palette,
-	}
+	return Some(
+		SpriteData {
+			width: width as u16,
+			height: height as u16,
+			bit_depth: bit_depth as u16,
+			pixels: pixel_vector,
+			palette: palette,
+		}
+	);
 }

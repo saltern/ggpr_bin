@@ -90,18 +90,11 @@ impl SpriteImporter {
 			return None;
 		}
 		
-		let mut data: SpriteData = SpriteData::default();
+		let mut data: SpriteData;
 		
-		match file.extension() {
-			Some(os_str) => match os_str.to_ascii_lowercase().to_str() {
-				Some("png") => data = sprite_get::get_png(&file),
-				Some("raw") => data = sprite_get::get_raw(&file),
-				Some("bin") => data = sprite_get::get_bin(&file),
-				Some("bmp") => data = sprite_get::get_bmp(&file),
-				_ => godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided"),
-			},
-			
-			_ => godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided"),
+		match sprite_get::get_sprite_file(&file) {
+			Some(sprite_data) => data = sprite_data,
+			None => return None,
 		}
 		
 		if data.width == 0 || data.height == 0 {
@@ -200,7 +193,7 @@ impl SpriteImporter {
 			// Grayscale format
 			Format::L8,
 			// Pixel array
-			PackedByteArray::from(data.pixels.clone())
+			&PackedByteArray::from(data.pixels.clone())
 		) {
 			Some(gd_image) => image = gd_image,
 			_ => return None,

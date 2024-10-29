@@ -1,6 +1,9 @@
 use godot::prelude::*;
 use godot::classes::ImageTexture;
 use godot::classes::Image;
+use godot::classes::image::Format;
+
+use crate::sprite_transform;
 
 pub const HEADER_SIZE: usize = 16;
 
@@ -136,5 +139,36 @@ impl BinSprite {
 				palette: palette,
 			}
 		});
+	}
+	
+	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice-versa.
+	#[func]
+	pub fn reindex(&mut self) {
+		let new_pixels: Vec<u8> = sprite_transform::reindex_vector(self.pixels.to_vec());
+		self.pixels = new_pixels.into();
+		
+		// Reconstruct image for preview in Godot
+		let old_image: &Image = self.image.as_ref().unwrap();
+		let tex_width: i32 = old_image.get_width() as i32;
+		let tex_height: i32 = old_image.get_height() as i32;
+		
+		let new_image: Gd<Image>;
+		
+		match Image::create_from_data(
+			tex_width,
+			tex_height,
+			// Mipmapping
+			false,
+			// Grayscale format
+			Format::L8,
+			// Pixel array
+			&PackedByteArray::from(self.pixels.clone())
+		) {
+			Some(gd_image) => new_image = gd_image,
+			_ => return,
+		}
+		
+		self.image = Some(new_image.clone());
+		self.texture = Some(ImageTexture::create_from_image(new_image).unwrap());
 	}
 }

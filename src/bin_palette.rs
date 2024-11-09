@@ -8,6 +8,34 @@ use crate::sprite_transform;
 use crate::sprite_compress::SpriteData;
 
 
+// Loads BinPalettes from a raw binary data vector.
+pub fn from_bin_data(bin_data: Vec<u8>) -> Option<Gd<BinPalette>> {
+	// Check 'clut' byte
+	if bin_data[0x02] != 0x20 {
+		godot_print!("BIN data does not contain a palette.");
+		return None;
+	}
+	
+	// Get palette
+	let palette: Vec<u8>;
+	
+	if bin_data[0x04] == 0x04 {
+		palette = bin_data[0x10..0x50].to_vec();
+	} else {
+		palette = bin_data[0x10..0x410].to_vec();
+	}
+	
+	return Some(
+		Gd::from_init_fn(|base| {
+			BinPalette {
+				base: base,
+				palette: PackedByteArray::from(palette),
+			}
+		})
+	);
+}
+
+
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Color palette obtained from loading a palette_#.bin file.
@@ -43,40 +71,14 @@ impl BinPalette {
 			return None;
 		}
 		
-		let bin_data: Vec<u8>;
-		
 		match fs::read(path_buf) {
-			Ok(data) => bin_data = data,
+			Ok(data) => return from_bin_data(data),
 			
 			_ => {
 				godot_print!("Could not load palette file!");
 				return None;
 			},
 		}
-		
-		// Check 'clut' byte
-		if bin_data[0x02] != 0x20 {
-			godot_print!("BIN file does not contain a palette.");
-			return None;
-		}
-		
-		// Get palette
-		let palette: Vec<u8>;
-		
-		if bin_data[0x04] == 0x04 {
-			palette = bin_data[0x10..0x50].to_vec();
-		} else {
-			palette = bin_data[0x10..0x410].to_vec();
-		}
-		
-		return Some(
-			Gd::from_init_fn(|base| {
-				Self {
-					base: base,
-					palette: PackedByteArray::from(palette),
-				}
-			})
-		);
 	}
 	
 	

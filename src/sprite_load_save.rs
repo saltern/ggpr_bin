@@ -17,6 +17,54 @@ use bin_sprite::BinSprite;
 use sprite_compress::SpriteData;
 use sprite_compress::CompressedData;
 
+	
+// Loads BinSprites from a raw binary data vector.
+pub fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
+	let sprite_data: SpriteData;
+
+	match sprite_get::get_bin_data(bin_data) {
+		None => return None,
+		Some(data) => {
+			if data.width == 0 || data.height == 0 {
+				return None;
+			}
+			
+			sprite_data = data;
+		}
+	}
+	
+	let image_option: Option<Gd<Image>> = Image::create_from_data(
+		// Dimensions
+		sprite_data.width as i32,
+		sprite_data.height as i32,
+		// Mipmapping
+		false,
+		// Grayscale format
+		Format::L8,
+		// Pixel array
+		&PackedByteArray::from(sprite_data.pixels.clone())
+	);
+	
+	match image_option {
+		Some(image) => {
+			return Some(
+				BinSprite::new_from_data(
+					// Pixels
+					PackedByteArray::from(sprite_data.pixels),
+					// Image
+					image,
+					// Color depth
+					sprite_data.bit_depth,
+					// Palette
+					PackedByteArray::from(sprite_data.palette)
+				)
+			);
+		},
+		
+		_ => return None,
+	}
+}
+
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -87,54 +135,7 @@ impl SpriteLoadSave {
 		}
 	
 		match fs::read(file) {
-			Ok(data) => return Self::load_sprite_data(data),
-			_ => return None,
-		}
-	}
-	
-	// Part of the loading function that deals with a raw sprite data vector.
-	fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
-		let sprite_data: SpriteData;
-
-		match sprite_get::get_bin_data(bin_data) {
-			None => return None,
-			Some(data) => {
-				if data.width == 0 || data.height == 0 {
-					return None;
-				}
-				
-				sprite_data = data;
-			}
-		}
-		
-		let image_option: Option<Gd<Image>> = Image::create_from_data(
-			// Dimensions
-			sprite_data.width as i32,
-			sprite_data.height as i32,
-			// Mipmapping
-			false,
-			// Grayscale format
-			Format::L8,
-			// Pixel array
-			&PackedByteArray::from(sprite_data.pixels.clone())
-		);
-		
-		match image_option {
-			Some(image) => {
-				return Some(
-					BinSprite::new_from_data(
-						// Pixels
-						PackedByteArray::from(sprite_data.pixels),
-						// Image
-						image,
-						// Color depth
-						sprite_data.bit_depth,
-						// Palette
-						PackedByteArray::from(sprite_data.palette)
-					)
-				);
-			},
-			
+			Ok(data) => return load_sprite_data(data),
 			_ => return None,
 		}
 	}

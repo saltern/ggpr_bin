@@ -389,12 +389,12 @@ impl ResourceLoadSave {
 		
 		object_dictionary.set("script", script);
 		
+		// Load palettes
 		if pointers.len() < 4 {
 			object_dictionary.set("type", "object");
 		}
 		
 		else {
-			// Load palettes
 			let palette_pointers: Vec<usize> = Self::get_pointers(&bin_data, pointers[3], false);
 			let mut palettes: Vec<Gd<BinPalette>> = Vec::new();
 			

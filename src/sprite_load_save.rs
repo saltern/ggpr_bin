@@ -114,7 +114,7 @@ impl SpriteLoadSave {
 		
 		for item in file_vector {
 			match Self::load_sprite_file(item) {
-				Some(sprite) => sprite_vector.push(sprite),
+				Some(sprite) => sprite_vector.push(&sprite),
 				None => continue,
 			}
 		}

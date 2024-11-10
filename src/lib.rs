@@ -1,6 +1,7 @@
 use godot::prelude::*;
 
 pub mod bin_resource;
+pub mod bin_cell;
 pub mod bin_sprite;
 pub mod bin_palette;
 pub mod sprite_get;

@@ -134,7 +134,7 @@ impl BinSprite {
 				base: base,
 				pixels: pixels,
 				image: Some(image.clone()),
-				texture: ImageTexture::create_from_image(image),
+				texture: ImageTexture::create_from_image(&image),
 				bit_depth: bit_depth,
 				palette: palette,
 			}
@@ -169,6 +169,6 @@ impl BinSprite {
 		}
 		
 		self.image = Some(new_image.clone());
-		self.texture = Some(ImageTexture::create_from_image(new_image).unwrap());
+		self.texture = Some(ImageTexture::create_from_image(&new_image).unwrap());
 	}
 }

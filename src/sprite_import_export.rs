@@ -61,12 +61,12 @@ impl SpriteImporter {
 			match Self::import_sprite(
 				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb, reindex, bit_depth
 			) {
-				Some(bin_sprite) => sprite_vector.push(bin_sprite),
+				Some(bin_sprite) => sprite_vector.push(&bin_sprite),
 				None => continue,
 			}
 			
 			// This is dumb as hell
-			self.base_mut().call_deferred("emit_signal".into(), &["sprite_imported".to_variant()]);
+			self.base_mut().call_deferred("emit_signal", &["sprite_imported".to_variant()]);
 		}
 		
 		return sprite_vector;

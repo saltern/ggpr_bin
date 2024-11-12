@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::ops::Deref;
 use serde::Serialize;
 use serde::Deserialize;
 
@@ -35,7 +36,7 @@ struct CellJSON {
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Representation of a single hitbox. All values are in pixels.
-struct BoxInfo {
+pub struct BoxInfo {
 	base: Base<Resource>,
 	/// The box's X offset from the object's origin.
 	#[export] pub x_offset: i16,
@@ -76,14 +77,14 @@ impl IResource for BoxInfo {
 #[derive(GodotClass, Debug)]
 #[class(tool, base=Resource)]
 /// Representation of a Guilty Gear cell (a combination of a sprite and hitboxes).
-struct Cell {
+pub struct Cell {
 	base: Base<Resource>,
 	#[export] pub boxes: Array<Gd<BoxInfo>>,
 	#[export] pub sprite_x_offset: i16,
 	#[export] pub sprite_y_offset: i16,
-	pub unknown_1: u32,
+	#[export] pub unknown_1: u32,
 	#[export] pub sprite_index: u16,
-	pub unknown_2: u16,
+	#[export] pub unknown_2: u16,
 }
 
 
@@ -106,14 +107,7 @@ impl IResource for Cell {
 #[godot_api]
 impl Cell {
 	/// Cell constructor from .json files.
-	#[func]
-	pub fn from_file(path: GString) -> Option<Gd<Self>> {
-		let path_buf: PathBuf = PathBuf::from(String::from(path));
-	
-		if !path_buf.exists() {
-			return None;
-		}
-		
+	pub fn from_file(path_buf: PathBuf) -> Option<Gd<Self>> {
 		match fs::read_to_string(&path_buf) {
 			Ok(string) => return Self::from_json_string(string),
 			_ => return None,
@@ -122,7 +116,6 @@ impl Cell {
 	
 	
 	/// Cell constructor from .json strings.
-	#[func]
 	pub fn from_json_string(string: String) -> Option<Gd<Self>> {
 		let cell_json: CellJSON;
 
@@ -166,5 +159,40 @@ impl Cell {
 		);
 		
 		return Some(cell);
+	}
+
+
+	/// Serializes the cell into a JSON string.
+	pub fn serialize(&mut self) -> String {
+		let mut boxes: Vec<CellJSONBox> = Vec::new();
+		
+		for mut hitbox in self.boxes.iter_shared() {
+			let box_mut = hitbox.bind_mut();
+			let this_box: &BoxInfo = box_mut.deref();
+			
+			let json_box: CellJSONBox = CellJSONBox {
+				x_offset: this_box.x_offset,
+				y_offset: this_box.y_offset,
+				width: this_box.width,
+				height: this_box.height,
+				box_type: (this_box.box_type as u32) | (this_box.crop_x_offset as u32) << 16 | (this_box.crop_y_offset as u32) << 24,
+			};
+			
+			boxes.push(json_box);
+		}
+		
+		let sprite_info = CellJSONSpriteInfo {
+			index: self.sprite_index,
+			unk: self.unknown_1,
+			x_offset: self.sprite_x_offset,
+			y_offset: self.sprite_y_offset,
+		};
+		
+		let cell_json = CellJSON {
+			boxes: boxes,
+			sprite_info: sprite_info,
+		};
+		
+		return serde_json::to_string(&cell_json).unwrap();
 	}
 }

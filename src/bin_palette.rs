@@ -42,8 +42,7 @@ pub fn from_bin_data(bin_data: Vec<u8>) -> Option<Gd<BinPalette>> {
 pub struct BinPalette {
 	base: Base<Resource>,
 	/// The color palette loaded from the file.
-	#[export]
-	palette: PackedByteArray,
+	#[export] pub palette: PackedByteArray,
 }
 
 

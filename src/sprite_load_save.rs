@@ -69,7 +69,7 @@ pub fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Rust GGXXAC+R sprite decompressor and loader, based on Ghoul.
-struct SpriteLoadSave {
+pub struct SpriteLoadSave {
 	base: Base<Resource>,
 }
 
@@ -88,7 +88,7 @@ impl IResource for SpriteLoadSave {
 impl SpriteLoadSave {
 	/// Loads BIN sprites in natural naming order from a specified path.
 	#[func]
-	fn load_sprites(source_path: GString) -> Array<Gd<BinSprite>> {
+	pub fn load_sprites(source_path: String) -> Array<Gd<BinSprite>> {
 		let path_str: String = String::from(source_path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
@@ -143,7 +143,7 @@ impl SpriteLoadSave {
 
 	/// Saves BIN sprites to a specified path. Overwrites existing files.
 	#[func]
-	fn save_sprites(sprites: Array<Gd<BinSprite>>, target_path: GString) {
+	pub fn save_sprites(sprites: Array<Gd<BinSprite>>, target_path: String) {
 		let path_str: String = String::from(target_path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		

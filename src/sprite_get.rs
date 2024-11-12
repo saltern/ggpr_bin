@@ -4,8 +4,6 @@ use std::path::PathBuf;
 
 use bmp_rust::bmp::{BMP, BITMAPFILEHEADER, DIBHEADER};
 
-use godot::prelude::*;
-
 use crate::bin_sprite;
 use crate::sprite_compress;
 use crate::sprite_transform;
@@ -26,13 +24,13 @@ pub fn get_sprite_file(source_file: &PathBuf) -> Option<SpriteData> {
 			Some("bin") => return get_bin(source_file),
 			Some("bmp") => return get_bmp(source_file),
 			_ => {
-				godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided");
+				println!("sprite_import_export::import_sprites() error: Invalid source format provided");
 				return None;
 			},
 		},
 		
 		_ => {
-			godot_print!("sprite_import_export::import_sprites() error: Invalid source format provided");
+			println!("sprite_import_export::import_sprites() error: Invalid source format provided");
 			return None;
 		}
 	}
@@ -45,8 +43,8 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 	match File::open(&source_file) {
 		Ok(value) => file = value,
 		_ => {
-			godot_print!("sprite_get::get_png() error: PNG file open error");
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("sprite_get::get_png() error: PNG file open error");
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -103,24 +101,24 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 		}
 		
 		png::ColorType::GrayscaleAlpha => {
-			godot_print!("Note: PNG has color type grayscale with alpha, will discard alpha");
-			godot_print!("\tFile: {}", &source_file.display());
+			println!("Note: PNG has color type grayscale with alpha, will discard alpha");
+			println!("\tFile: {}", &source_file.display());
 			for pixel in 0..source_bytes.len() / 2 {
 				pixel_vector.push(source_bytes[pixel * 2]);
 			}
 		},
 		
 		png::ColorType::Rgb => {
-			godot_print!("Note: PNG has color type RGB, will use red channel as grayscale");
-			godot_print!("\tFile: {}", &source_file.display());
+			println!("Note: PNG has color type RGB, will use red channel as grayscale");
+			println!("\tFile: {}", &source_file.display());
 			for pixel in 0..source_bytes.len() / 3 {
 				pixel_vector.push(source_bytes[pixel * 3]);
 			}
 		},
 		
 		png::ColorType::Rgba => {
-			godot_print!("Note: PNG has color type RGBA, will use red channel as grayscale and discard alpha");
-			godot_print!("\tFile: {}", &source_file.display());
+			println!("Note: PNG has color type RGBA, will use red channel as grayscale and discard alpha");
+			println!("\tFile: {}", &source_file.display());
 			for pixel in 0..source_bytes.len() / 4 {
 				pixel_vector.push(source_bytes[pixel * 4]);
 			}
@@ -182,14 +180,14 @@ pub fn get_raw(source_file: &PathBuf) -> Option<SpriteData> {
 	}
 	
 	if width == 0 {
-		godot_print!("Warning: will not process RAW as its width was not specified");
-		godot_print!("\tSkipped: {}", &source_file.display());
+		println!("Warning: will not process RAW as its width was not specified");
+		println!("\tSkipped: {}", &source_file.display());
 		return None;
 	}
 	
 	if height == 0 {
-		godot_print!("Warning: will not process RAW as its height was not specified");
-		godot_print!("\tSkipped: {}", &source_file.display());
+		println!("Warning: will not process RAW as its height was not specified");
+		println!("\tSkipped: {}", &source_file.display());
 		return None;
 	}
 
@@ -206,8 +204,8 @@ pub fn get_raw(source_file: &PathBuf) -> Option<SpriteData> {
 		),
 		
 		_ => {
-			godot_print!("sprite_get::get_raw() error: RAW file read error");
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("sprite_get::get_raw() error: RAW file read error");
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -218,8 +216,8 @@ pub fn get_bin(source_file: &PathBuf) -> Option<SpriteData> {
 	match fs::read(source_file) {
 		Ok(bin_data) => return get_bin_data(bin_data),
 		_ => {
-			godot_print!("sprite_get::get_bin() error: BIN file read error");
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("sprite_get::get_bin() error: BIN file read error");
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -228,12 +226,12 @@ pub fn get_bin(source_file: &PathBuf) -> Option<SpriteData> {
 
 pub fn get_bin_data(bin_data: Vec<u8>) -> Option<SpriteData> {
 	if bin_data.len() < 0x20 {
-		godot_print!("Input .BIN file has less than 32 bytes, skipping.");
+		println!("Input .BIN file has less than 32 bytes, skipping.");
 		return None;
 	}
 	
 	if bin_data[0x00] > 0x01 {
-		godot_print!("Input .BIN file not a sprite, skipping.");
+		println!("Input .BIN file not a sprite, skipping.");
 		return None;
 	}
 	
@@ -288,8 +286,8 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 	match fs::read(source_file) {
 		Ok(value) => bytes = value,
 		_ => {
-			godot_print!("sprite_get::get_bmp() error: BMP file read error");
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("sprite_get::get_bmp() error: BMP file read error");
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -304,8 +302,8 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 	match BMP::get_dib_header(&bmp) {
 		Ok(header) => dib_header = header,
 		_ => {
-			godot_print!("sprite_get::get_bmp() error: Could not read DIB header");
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("sprite_get::get_bmp() error: Could not read DIB header");
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -330,8 +328,8 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 		4 => pixel_array = sprite_transform::bpp_from_4(pixel_array, false),
 		8 => (),
 		_ => {
-			godot_print!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
-			godot_print!("\tSkipped: {}", &source_file.display());
+			println!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
+			println!("\tSkipped: {}", &source_file.display());
 			return None;
 		},
 	}
@@ -348,14 +346,14 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 	
 	// Invalid BMP	
 	if std::cmp::max(width, height) > u16::MAX as usize {
-		godot_print!("sprite_get::get_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
-		godot_print!("\tSkipped: {}", &source_file.display());
+		println!("sprite_get::get_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
+		println!("\tSkipped: {}", &source_file.display());
 		return None;
 	}
 	
 	if pixel_vector.len() != width * height {
-		godot_print!("sprite_get::get_bmp() error: bad BMP: pixel count mismatches image dimensions, result may differ");
-		godot_print!("\tFile: {}", &source_file.display());
+		println!("sprite_get::get_bmp() error: bad BMP: pixel count mismatches image dimensions, result may differ");
+		println!("\tFile: {}", &source_file.display());
 		pixel_vector.resize((dib_header.width * dib_header.height.abs() as u32) as usize, 0u8);
 	}
 	

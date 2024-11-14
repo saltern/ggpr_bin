@@ -17,54 +17,6 @@ use bin_sprite::BinSprite;
 use sprite_compress::SpriteData;
 use sprite_compress::CompressedData;
 
-	
-// Loads BinSprites from a raw binary data vector.
-pub fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
-	let sprite_data: SpriteData;
-
-	match sprite_get::get_bin_data(bin_data) {
-		None => return None,
-		Some(data) => {
-			if data.width == 0 || data.height == 0 {
-				return None;
-			}
-			
-			sprite_data = data;
-		}
-	}
-	
-	let image_option: Option<Gd<Image>> = Image::create_from_data(
-		// Dimensions
-		sprite_data.width as i32,
-		sprite_data.height as i32,
-		// Mipmapping
-		false,
-		// Grayscale format
-		Format::L8,
-		// Pixel array
-		&PackedByteArray::from(sprite_data.pixels.clone())
-	);
-	
-	match image_option {
-		Some(image) => {
-			return Some(
-				BinSprite::new_from_data(
-					// Pixels
-					PackedByteArray::from(sprite_data.pixels),
-					// Image
-					image,
-					// Color depth
-					sprite_data.bit_depth,
-					// Palette
-					PackedByteArray::from(sprite_data.palette)
-				)
-			);
-		},
-		
-		_ => return None,
-	}
-}
-
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -89,8 +41,7 @@ impl SpriteLoadSave {
 	/// Loads BIN sprites in natural naming order from a specified path.
 	#[func]
 	pub fn load_sprites(source_path: String) -> Array<Gd<BinSprite>> {
-		let path_str: String = String::from(source_path);
-		let path_buf: PathBuf = PathBuf::from(path_str);
+		let path_buf: PathBuf = PathBuf::from(source_path);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find sprite directory!");
@@ -135,11 +86,54 @@ impl SpriteLoadSave {
 		}
 	
 		match fs::read(file) {
-			Ok(data) => return load_sprite_data(data),
+			Ok(data) => return Self::load_sprite_data(data),
 			_ => return None,
 		}
 	}
+	
+	
+	// Loads BinSprites from a raw binary data vector.
+	pub fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
+		let sprite_data: SpriteData;
 
+		match sprite_get::get_bin_data(bin_data) {
+			None => return None,
+			Some(data) => {
+				if data.width == 0 || data.height == 0 {
+					return None;
+				}
+				
+				sprite_data = data;
+			}
+		}
+		
+		let sprite_image = Image::create_from_data(
+			// Dimensions
+			sprite_data.width as i32,
+			sprite_data.height as i32,
+			// Mipmapping
+			false,
+			// Grayscale format
+			Format::L8,
+			// Pixel array
+			&PackedByteArray::from(sprite_data.pixels.clone())
+		);
+		// godot_print!("\t* made");
+		
+		match sprite_image {
+			Some(image) => return Some(BinSprite::new_from_data(
+				PackedByteArray::from(sprite_data.pixels),
+				image,
+				sprite_data.bit_depth,
+				PackedByteArray::from(sprite_data.palette)
+			)),
+			
+			_ => {
+				return None;
+			}
+		}
+	}
+	
 
 	/// Saves BIN sprites to a specified path. Overwrites existing files.
 	#[func]

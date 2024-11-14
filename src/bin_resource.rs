@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use godot::prelude::*;
 
 use crate::bin_sprite::BinSprite;
+use crate::bin_cell::Cell;
 use crate::bin_palette;
 use crate::bin_palette::BinPalette;
-use crate::sprite_load_save;
+use crate::sprite_load_save::SpriteLoadSave;
 
 
 enum ResourceType {
@@ -26,6 +27,7 @@ enum ResourceError {
 }
 
 
+const WBND_SIGNATURE: usize = 0x444E4257;
 const VAGP_SIGNATURE: [u8; 4] = [0x56, 0x41, 0x47, 0x70];
 
 
@@ -94,9 +96,11 @@ impl ResourceLoadSave {
 				"error": "File not found!",
 			}
 		}
-
+		
 		match fs::read(path_buf) {
-			Ok(data) => return Self::load_binary_data(data),
+			Ok(data) => {
+				return Self::load_binary_data(data);
+			},
 			
 			_ => return dict! {
 				"error": "Could not load binary file!",
@@ -114,8 +118,8 @@ impl ResourceLoadSave {
 				// ResourceType.SpriteObjects => return load_sprite_objects(bin_data),
 				// ResourceType.Select => return load_select(bin_data),
 				_ => return dict! {
-					"error": "Unsupported binary file type.",
-				}
+						"error": "Unsupported binary file type.",
+				},
 			},
 			
 			Err(err_type) => match err_type {
@@ -190,13 +194,17 @@ impl ResourceLoadSave {
 				else {
 					if pointers_this_object.len() != 3 {
 						// OK to have != 3 pointers if it's an audio array
-						let vagp_pointer: usize = (pointers_this_object[0] as u32).swap_bytes() as usize;
+						let audio_array_pointer: usize = (pointers_this_object[0] as u32).swap_bytes() as usize;
+						
+						if audio_array_pointer == WBND_SIGNATURE {
+							continue;
+						}
 						
 						let signature: Vec<u8> = vec![
-							bin_data[header_pointers[pointer] + vagp_pointer + 0x00],
-							bin_data[header_pointers[pointer] + vagp_pointer + 0x01],
-							bin_data[header_pointers[pointer] + vagp_pointer + 0x02],
-							bin_data[header_pointers[pointer] + vagp_pointer + 0x03],
+							bin_data[header_pointers[pointer] + audio_array_pointer + 0x00],
+							bin_data[header_pointers[pointer] + audio_array_pointer + 0x01],
+							bin_data[header_pointers[pointer] + audio_array_pointer + 0x02],
+							bin_data[header_pointers[pointer] + audio_array_pointer + 0x03],
 						];
 						
 						if signature == VAGP_SIGNATURE {
@@ -270,7 +278,7 @@ impl ResourceLoadSave {
 		
 		/*	"objects": {
 				"player": {
-					"cells": Vec<PackedByteArray>,
+					"cells": Vec<BinCell>,
 					"sprites": Vec<BinSprite>,
 					"script": PackedByteArray,
 					"palettes": Vec<BinPalette>,
@@ -287,7 +295,7 @@ impl ResourceLoadSave {
 		*/
 		
 		for object in 0..header_pointers.len() {
-			let mut new_object: Dictionary;
+			let new_object: Dictionary;
 		
 			if object == header_pointers.len() - 1 {
 				new_object = Self::load_character_object(
@@ -314,6 +322,14 @@ impl ResourceLoadSave {
 		
 		let mut object_dictionary: Dictionary = Dictionary::new();
 		
+		// Check if WBND first
+		if pointers_vagp[0] == WBND_SIGNATURE {
+			return dict! {
+				"type": "audio_wbnd",
+				"data": PackedByteArray::from(bin_data.clone()),
+			}
+		}
+		
 		// Check if VAGp first
 		if bin_data.len() > pointers_vagp[0] {
 			let signature: Vec<u8> = vec![
@@ -325,15 +341,33 @@ impl ResourceLoadSave {
 			
 			if signature == VAGP_SIGNATURE {
 				return dict! {
-					"type": "audio_array",
+					"type": "audio_vagp",
 					"data": PackedByteArray::from(bin_data.clone()),
 				};
 			}
 		}
 		
+		object_dictionary.set("cells", Self::load_cells(&bin_data, &pointers));
+		object_dictionary.set("sprites", Self::load_sprites(&bin_data, &pointers));
+		object_dictionary.set("script", Self::load_script(&bin_data, &pointers));
+		
+		match Self::load_palettes(&bin_data, &pointers) {
+			Some(palette_array) => {
+				object_dictionary.set("palettes", palette_array);
+				object_dictionary.set("type", "player");
+			},
+			
+			None => object_dictionary.set("type", "object"),
+		}
+		
+		return object_dictionary;
+	}
+	
+	
+	fn load_cells(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<Gd<Cell>> {
 		// Load cells
 		let cell_pointers: Vec<usize> = Self::get_pointers(&bin_data, pointers[0], false);
-		let mut cells: Vec<PackedByteArray> = Vec::new();
+		let mut cells: Vec<Gd<Cell>> = Vec::new();
 
 		for cell in cell_pointers.iter() {
 			let cursor: usize = pointers[0] + cell;
@@ -344,39 +378,50 @@ impl ResourceLoadSave {
 				bin_data[cursor + 0x03]
 			]);
 			
-			cells.push(
-				PackedByteArray::from(
-					&bin_data[cursor..cursor + 16 + (hitbox_count as usize * 12)]
-				)
-			);
+			let cell_slice: &[u8] = &bin_data[cursor..cursor + 0x10 + (hitbox_count as usize * 0x0C)];
+			match Cell::from_binary_data(cell_slice) {
+				Some(cell) => cells.push(cell),
+				_ => continue,
+			}
 		}
 		
-		object_dictionary.set("cells", cells);
-		
+		return cells;
+	}
+	
+	
+	fn load_sprites(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<Gd<BinSprite>> {
 		// Load sprites
 		let sprite_pointers: Vec<usize> = Self::get_pointers(&bin_data, pointers[1], false);
 		let mut sprites: Vec<Gd<BinSprite>> = Vec::new();
 		
 		for sprite in 0..sprite_pointers.len() {
-			let cursor: usize = pointers[1] + sprite_pointers[sprite];
-			let sprite_data: Vec<u8>;
+			let start: usize = pointers[1] + sprite_pointers[sprite];
+			let end: usize;
 			
 			if sprite < sprite_pointers.len() - 1 {
-				sprite_data = bin_data[cursor..pointers[1] + sprite_pointers[sprite + 1]].to_vec();
+				end = pointers[1] + sprite_pointers[sprite + 1];
 			}
 			
 			else {
-				sprite_data = bin_data[cursor..pointers[2]].to_vec();
+				end = pointers[2];
 			}
 			
-			match sprite_load_save::load_sprite_data(sprite_data) {
-				Some(sprite) => sprites.push(sprite),
-				None => continue,
+			match SpriteLoadSave::load_sprite_data(bin_data[start..end].to_vec()) {
+				Some(sprite) => {
+					sprites.push(sprite);
+				},
+				
+				None => {
+					continue;
+				},
 			}
 		}
 		
-		object_dictionary.set("sprites", sprites);
-		
+		return sprites;
+	}
+	
+	
+	fn load_script(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<u8> {
 		// Load script
 		let script: Vec<u8>;
 		if pointers.len() == 4 {
@@ -387,30 +432,29 @@ impl ResourceLoadSave {
 			script = bin_data[pointers[2]..].to_vec();
 		}
 		
-		object_dictionary.set("script", script);
-		
+		return script;
+	}
+	
+	
+	fn load_palettes(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Option<Vec<Gd<BinPalette>>> {
 		// Load palettes
 		if pointers.len() < 4 {
-			object_dictionary.set("type", "object");
+			return None;
 		}
 		
-		else {
-			let palette_pointers: Vec<usize> = Self::get_pointers(&bin_data, pointers[3], false);
-			let mut palettes: Vec<Gd<BinPalette>> = Vec::new();
+		let palette_pointers: Vec<usize> = Self::get_pointers(&bin_data, pointers[3], false);
+		let mut palettes: Vec<Gd<BinPalette>> = Vec::new();
+		
+		for palette in palette_pointers.iter() {
+			let cursor: usize = pointers[3] + palette;
+			let palette_data: Vec<u8> = bin_data[cursor..cursor + 0x410].to_vec();
 			
-			for palette in palette_pointers.iter() {
-				let cursor: usize = pointers[3] + palette;
-				let palette_data: Vec<u8> = bin_data[cursor..cursor + 0x410].to_vec();
-				
-				match bin_palette::from_bin_data(palette_data) {
-					Some(palette) => palettes.push(palette),
-					None => continue,
-				}
+			match bin_palette::from_bin_data(palette_data) {
+				Some(palette) => palettes.push(palette),
+				None => continue,
 			}
-			object_dictionary.set("palettes", palettes);
-			object_dictionary.set("type", "player");
 		}
 		
-		return object_dictionary;
+		return Some(palettes);
 	}
 }

@@ -162,6 +162,77 @@ impl Cell {
 	}
 
 
+	// Cell constructor from raw binary data.
+	pub fn from_binary_data(bin_data: &[u8]) -> Option<Gd<Self>> {
+		if bin_data.len() < 0x04 {
+			return None;
+		}
+	
+		let hitbox_count: u32 = u32::from_le_bytes(
+			[bin_data[0x00], bin_data[0x01], bin_data[0x02], bin_data[0x03]]
+		);
+		
+		if bin_data.len() < (0x0C * hitbox_count as usize) + 0x10 {
+			return None;
+		}
+		
+		let mut hitbox_array: Array<Gd<BoxInfo>> = Array::new();
+		for hitbox_number in 0..hitbox_count as usize {
+			hitbox_array.push(&Gd::from_init_fn(|base| {
+				BoxInfo {
+					base: base,
+					x_offset: i16::from_le_bytes([
+						bin_data[0x0C * hitbox_number + 0x04],
+						bin_data[0x0C * hitbox_number + 0x05]
+					]),
+					y_offset: i16::from_le_bytes([
+						bin_data[0x0C * hitbox_number + 0x06],
+						bin_data[0x0C * hitbox_number + 0x07]
+					]),
+					width: u16::from_le_bytes([
+						bin_data[0x0C * hitbox_number + 0x08],
+						bin_data[0x0C * hitbox_number + 0x09]
+					]),
+					height: u16::from_le_bytes([
+						bin_data[0x0C * hitbox_number + 0x0A],
+						bin_data[0x0C * hitbox_number + 0x0B]
+					]),
+					box_type: u16::from_le_bytes([
+						bin_data[0x0C * hitbox_number + 0x0C],
+						bin_data[0x0C * hitbox_number + 0x0D]
+					]),
+					crop_x_offset: bin_data[0x0C * hitbox_number + 0x0E],
+					crop_y_offset: bin_data[0x0C * hitbox_number + 0x0F],
+				}
+			}));
+		}
+		
+		let cursor: usize = (hitbox_count as usize) * 0x0C + 0x04;
+		return Some(Gd::from_init_fn(|base| {
+		Cell {
+				base: base,
+				boxes: hitbox_array,
+				sprite_x_offset: i16::from_le_bytes([
+					bin_data[cursor + 0x00], bin_data[cursor + 0x01]
+				]),
+				sprite_y_offset: i16::from_le_bytes([
+					bin_data[cursor + 0x02], bin_data[cursor + 0x03]
+				]),
+				unknown_1: u32::from_le_bytes([
+					bin_data[cursor + 0x04], bin_data[cursor + 0x05],
+					bin_data[cursor + 0x06], bin_data[cursor + 0x07]
+				]),
+				sprite_index: u16::from_le_bytes([
+					bin_data[cursor + 0x08], bin_data[cursor + 0x09]
+				]),
+				unknown_2: u16::from_le_bytes([
+					bin_data[cursor + 0x0A], bin_data[cursor + 0x0B]
+				]),
+			}
+		}));
+	}
+
+
 	/// Serializes the cell into a JSON string.
 	pub fn serialize(&mut self) -> String {
 		let mut boxes: Vec<CellJSONBox> = Vec::new();

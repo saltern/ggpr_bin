@@ -5,6 +5,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::ops::DerefMut;
 use std::cmp;
+use std::ffi::OsStr;
 
 use crate::bin_cell::Cell;
 use crate::bin_sprite::BinSprite;
@@ -18,7 +19,7 @@ use godot::prelude::*;
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Holds the player object's palettes.
-struct PaletteData {
+pub struct PaletteData {
 	base: Base<Resource>,
 	#[export] palettes: Array<Gd<BinPalette>>,
 }
@@ -95,13 +96,6 @@ impl PaletteData {
 	
 	/// Saves all palettes in memory to .bin files.
 	pub fn serialize_and_save(&mut self, mut path_buf: PathBuf) {
-		let mut global_signals = godot::classes::Engine::singleton()
-			.get_singleton(&StringName::from("GlobalSignals")).unwrap();
-		
-		// I hope that signal rework comes sooner rather than later
-		global_signals.call_deferred("emit_signal", &["save_object".to_variant(), "palettes".to_variant()]);
-		global_signals.call_deferred("emit_signal", &["save_sub_object".to_variant(), "".to_variant()]);
-		
 		path_buf.pop();
 		path_buf.push("/palettes");
 		
@@ -179,11 +173,12 @@ impl PaletteData {
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Holds all of the data pertaining to a single object from a binary file.
-struct ObjectData {
+pub struct ObjectData {
 	base: Base<Resource>,
 	#[var] pub name: GString,
-	#[var] pub sprites: Array<Gd<BinSprite>>,
 	#[var] pub cells: Array<Gd<Cell>>,
+	#[var] pub sprites: Array<Gd<BinSprite>>,
+	#[var] pub script: PackedByteArray,
 	#[var] pub palette_data: Gd<PaletteData>,
 	//#[var] pub object_script: Gd<ObjectScript>,
 }
@@ -195,8 +190,9 @@ impl IResource for ObjectData {
 		Self {
 			base: base,
 			name: "".into(),
-			sprites: array![],
 			cells: array![],
+			sprites: array![],
+			script: PackedByteArray::new(),
 			palette_data: PaletteData::new_gd(),
 		}
 	}
@@ -206,22 +202,23 @@ impl IResource for ObjectData {
 #[godot_api]
 impl ObjectData {
 	/// Signals changes to a palette. Emitted by [PaletteProvider] when a color is changed. Used by [SpriteEdit].
-	#[signal]
-	fn palette_updated();
+	#[signal] fn palette_updated();
 	
 	/// Signals that a specific palette was selected. Used to sync the palette across editors.
-	#[signal]
-	fn palette_selected(palette_index: i64);
+	#[signal] fn palette_selected(palette_index: i64);
+	
+	/// Signals that this object has started saving.
+	#[signal] fn saving_element();
+	
+	
+	// =================================================================================
+	// SAVING (DIRECTORY)
+	// =================================================================================
 	
 	
 	/// Calls serialization functions for cell, sprite, and palette data, saving the results to the specified path.
 	#[func]
-	pub fn serialize_and_save(&mut self, path: String) {
-		let mut global_signals = godot::classes::Engine::singleton()
-			.get_singleton(&StringName::from("GlobalSignals")).unwrap();
-		
-		global_signals.call_deferred("emit_signal", &["save_object".to_variant(), self.name.to_variant()]);
-		
+	pub fn save_as_directory(&mut self, path: String) {
 		self.save_cells_to_path(path.clone());
 		self.save_sprites_to_path(path.clone());
 		self.palette_data.bind_mut().serialize_and_save(PathBuf::from(path));
@@ -229,8 +226,7 @@ impl ObjectData {
 	
 	
 	/// Returns a string array of JSON-serialized cells.
-	#[func]
-	pub fn serialize_cells(&mut self) -> Array<GString> {
+	fn serialize_cells(&mut self) -> Array<GString> {
 		let mut array: Array<GString> = array![];
 		
 		for mut cell in self.cells.iter_shared() {
@@ -243,16 +239,12 @@ impl ObjectData {
 	
 	
 	/// Saves cells to a path in JSON format.
-	pub fn save_cells_to_path(&mut self, path: String) {
-		let mut global_signals = godot::classes::Engine::singleton()
-			.get_singleton(&StringName::from("GlobalSignals")).unwrap();
-		
+	fn save_cells_to_path(&mut self, path: String) {
 		if self.cells.len() < 1 {
 			return;
 		}
 		
 		fs::create_dir_all(format!("{}/cells_0", path)).unwrap();
-		global_signals.call_deferred("emit_signal", &["save_sub_object".to_variant(), "cells".to_variant()]);
 		
 		let mut cell_num: usize = 0;
 		
@@ -279,15 +271,10 @@ impl ObjectData {
 	
 	
 	/// Saves sprites to a path in compressed .bin format.
-	#[func]
-	pub fn save_sprites_to_path(&mut self, path: String) {
-		let mut global_signals = godot::classes::Engine::singleton()
-			.get_singleton(&StringName::from("GlobalSignals")).unwrap();
-		
+	fn save_sprites_to_path(&mut self, path: String) {
 		fs::create_dir_all(format!("{}/sprites_0", path)).unwrap();
-		global_signals.call_deferred("emit_signal", &["save_sub_object".to_variant(), "sprites".to_variant()]);
 		
-		SpriteLoadSave::save_sprites(self.sprites.clone(), path.clone());
+		SpriteLoadSave::save_sprites(self.sprites.clone(), format!("{}/sprites_0", &path));
 		
 		// Replace old files with new
 		let _ = fs::rename(format!("{}/sprites_0", &path), format!("{}/sprites_1", &path));
@@ -296,9 +283,37 @@ impl ObjectData {
 	}
 	
 	
-	/// Loads .bin sprites from a path.
+	// =================================================================================
+	// LOADING (DIRECTORY)
+	// =================================================================================
+	
+	
+	/// Loads data (cells, sprites, palettes) from a path.
 	#[func]
-	pub fn load_sprites_from_path(&mut self, path: String) -> bool {
+	pub fn load_data_from_path(&mut self, path: String) {
+		let path_buf = PathBuf::from(&path);
+		if !path_buf.exists() {
+			return;
+		}
+		
+		self.load_sprites_from_path(format!("{}/sprites", path));
+		
+		// Fail early
+		if self.sprites.len() < 1 {
+			return;
+		}
+		
+		self.load_cells_from_path(format!("{}/cells", path));
+		
+		// Palettes
+		if path_buf.file_name() == Some(OsStr::new("player")) {
+			self.load_palette_data_from_path(format!("{}/../palettes", path));
+		}
+	}
+	
+	
+	// Loads .bin sprites from a path.
+	fn load_sprites_from_path(&mut self, path: String) -> bool {
 		let path_buf = PathBuf::from(path.clone());
 		
 		if !path_buf.exists() {
@@ -310,9 +325,8 @@ impl ObjectData {
 	}
 	
 	
-	/// Loads .json cells from a path.
-	#[func]
-	pub fn load_cells_from_path(&mut self, path: String) -> bool {
+	// Loads .json cells from a path.
+	fn load_cells_from_path(&mut self, path: String) -> bool {
 		let path_buf = PathBuf::from(path);
 		if !path_buf.exists() {
 			return false;
@@ -343,14 +357,18 @@ impl ObjectData {
 	}
 	
 	
-	/// Loads any palettes present in a path.
-	#[func]
-	pub fn load_palette_data_from_path(&mut self, path: String) -> bool {
+	// Loads any palettes present in a path.
+	fn load_palette_data_from_path(&mut self, path: String) -> bool {
 		let mut binding = self.palette_data.bind_mut();
 		let palette_data = binding.deref_mut();
 		palette_data.load_palettes_from_path(path);
 		return palette_data.palettes.len() > 0;
 	}
+	
+	
+	// =================================================================================
+	// UTILITY
+	// =================================================================================
 	
 	
 	/// Returns cell numbers affected by sprite index clamping.

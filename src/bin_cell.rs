@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::io::BufWriter;
 use std::fs;
 use std::path::PathBuf;
 use std::ops::Deref;
@@ -112,6 +114,57 @@ impl Cell {
 			Ok(string) => return Self::from_json_string(string),
 			_ => return None,
 		}
+	}
+	
+	
+	/// Saves cell to a .json file.
+	pub fn to_file(&self, path_buf: PathBuf) {
+		let json_string = self.serialize();
+		
+		match fs::File::create(path_buf) {
+			Ok(file) => {
+				let ref mut buffer = BufWriter::new(file);
+				let _ = buffer.write(json_string.as_bytes());
+				let _ = buffer.flush();
+			},
+			
+			_ => (),
+		}
+	}
+	
+	
+	// Returns a binary representation of the cell.
+	pub fn to_bin(&self) -> Vec<u8> {
+		let mut bin_data: Vec<u8> = Vec::new();
+		
+		// Hitbox count
+		bin_data.extend((self.boxes.len() as u32).to_le_bytes());
+		
+		// Hitbox data
+		for hitbox in self.boxes.iter_shared() {
+			let binding = hitbox.bind();
+			bin_data.extend(binding.x_offset.to_le_bytes());
+			bin_data.extend(binding.y_offset.to_le_bytes());
+			bin_data.extend(binding.width.to_le_bytes());
+			bin_data.extend(binding.height.to_le_bytes());
+			bin_data.extend(binding.box_type.to_le_bytes());
+			bin_data.push(binding.crop_x_offset);
+			bin_data.push(binding.crop_y_offset);
+		}
+		
+		// Rest of data
+		bin_data.extend((self.sprite_x_offset).to_le_bytes());
+		bin_data.extend((self.sprite_y_offset).to_le_bytes());
+		bin_data.extend((self.unknown_1).to_le_bytes());
+		bin_data.extend((self.sprite_index).to_le_bytes());
+		bin_data.extend((self.unknown_2).to_le_bytes());
+		
+		// Pad and align
+		if bin_data.len() % 0x10 != 0x00 {
+			bin_data.resize(bin_data.len() + bin_data.len() % 0x10, 0xFF);
+		}
+		
+		return bin_data;
 	}
 	
 	
@@ -234,7 +287,7 @@ impl Cell {
 
 
 	/// Serializes the cell into a JSON string.
-	pub fn serialize(&mut self) -> String {
+	pub fn serialize(&self) -> String {
 		let mut boxes: Vec<CellJSONBox> = Vec::new();
 		
 		for mut hitbox in self.boxes.iter_shared() {
@@ -265,5 +318,10 @@ impl Cell {
 		};
 		
 		return serde_json::to_string(&cell_json).unwrap();
+	}
+	
+	
+	pub fn clamp_sprite_index(&mut self, sprite_max: u16) {
+		self.sprite_index = self.sprite_index.clamp(0, sprite_max);
 	}
 }

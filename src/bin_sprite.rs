@@ -4,6 +4,9 @@ use godot::classes::Image;
 use godot::classes::image::Format;
 
 use crate::sprite_transform;
+use crate::sprite_compress;
+use crate::sprite_compress::CompressedData;
+use crate::sprite_compress::SpriteData;
 
 pub const HEADER_SIZE: usize = 16;
 
@@ -140,6 +143,64 @@ impl BinSprite {
 			}
 		});
 	}
+	
+	
+	pub fn to_bin(&self) -> Vec<u8> {
+		let image: Gd<Image> = self.image.clone().unwrap();
+		
+		let sprite_data: SpriteData = SpriteData {
+			width: image.get_width() as u16,
+			height: image.get_height() as u16,
+			bit_depth: self.bit_depth,
+			pixels: self.pixels.to_vec(),
+			palette: self.palette.to_vec(),
+		};
+		
+		let compressed_data: CompressedData = sprite_compress::compress(sprite_data);
+		
+		// Generate hash
+		let mut hash: u16 = 0;
+		
+		for byte in 0..compressed_data.stream.len() / 2 {
+			hash = hash ^ (
+				(compressed_data.stream[byte + 0] as u16) |
+				(compressed_data.stream[byte + 1] as u16) << 8
+			);
+		}
+		
+		// Construct header
+		let header: Vec<u8> = make_header(
+			true,
+			0x20 * (self.palette.len() != 0) as u16,
+			self.bit_depth,
+			image.get_width() as u16,
+			image.get_height() as u16,
+			0x0000,
+			0x0000,
+			hash,
+		);
+		
+		let mut bin_data: Vec<u8> = Vec::new();
+		let iterations_u32: u32 = compressed_data.iterations as u32;
+		
+		bin_data.extend(header);
+		bin_data.extend_from_slice(&[
+			(iterations_u32 >> 16) as u8,
+			(iterations_u32 >> 24) as u8,
+			 iterations_u32 as u8,
+			(iterations_u32 >> 08) as u8,
+		]);
+		
+		for byte in 0..compressed_data.stream.len() / 2 {
+			bin_data.extend([
+				compressed_data.stream[2 * byte + 1],
+				compressed_data.stream[2 * byte + 0],
+			]);
+		}
+		
+		return bin_data;
+	}
+	
 	
 	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice-versa.
 	#[func]

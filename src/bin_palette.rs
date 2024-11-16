@@ -1,4 +1,7 @@
+use std::io::Write;
+use std::io::BufWriter;
 use std::fs;
+use std::fs::File;
 use std::path::PathBuf;
 
 use godot::prelude::*;
@@ -6,34 +9,6 @@ use godot::prelude::*;
 use crate::sprite_get;
 use crate::sprite_transform;
 use crate::sprite_compress::SpriteData;
-
-
-// Loads BinPalettes from a raw binary data vector.
-pub fn from_bin_data(bin_data: Vec<u8>) -> Option<Gd<BinPalette>> {
-	// Check 'clut' byte
-	if bin_data[0x02] != 0x20 {
-		godot_print!("BIN data does not contain a palette.");
-		return None;
-	}
-	
-	// Get palette
-	let palette: Vec<u8>;
-	
-	if bin_data[0x04] == 0x04 {
-		palette = bin_data[0x10..0x50].to_vec();
-	} else {
-		palette = bin_data[0x10..0x410].to_vec();
-	}
-	
-	return Some(
-		Gd::from_init_fn(|base| {
-			BinPalette {
-				base: base,
-				palette: PackedByteArray::from(palette),
-			}
-		})
-	);
-}
 
 
 #[derive(GodotClass)]
@@ -59,9 +34,18 @@ impl IResource for BinPalette {
 
 #[godot_api]
 impl BinPalette {
+	/// The default header to save palettes with.
+	const DEFAULT_HEADER: &[u8; 16] = &[
+		0x03, 0x00, 0x20, 0x00,
+		0x08, 0x00, 0xC0, 0x00,
+		0x20, 0x01, 0x08, 0x00,
+		0x09, 0x00, 0xFF, 0xFF
+	];
+	
+	
 	/// Static constructor for BinPalettes from .bin files.
 	#[func]
-	pub fn from_bin_file(path: GString) -> Option<Gd<Self>> {
+	pub fn from_bin_file(path: String) -> Option<Gd<Self>> {
 		let path_str: String = String::from(path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
@@ -71,13 +55,41 @@ impl BinPalette {
 		}
 		
 		match fs::read(path_buf) {
-			Ok(data) => return from_bin_data(data),
+			Ok(data) => return Self::from_bin_data(data),
 			
 			_ => {
 				godot_print!("Could not load palette file!");
 				return None;
 			},
 		}
+	}
+
+
+	// Loads BinPalettes from a raw binary data vector.
+	pub fn from_bin_data(bin_data: Vec<u8>) -> Option<Gd<BinPalette>> {
+		// Check 'clut' byte
+		if bin_data[0x02] != 0x20 {
+			godot_print!("BIN data does not contain a palette.");
+			return None;
+		}
+		
+		// Get palette
+		let palette: Vec<u8>;
+		
+		if bin_data[0x04] == 0x04 {
+			palette = bin_data[0x10..0x50].to_vec();
+		} else {
+			palette = bin_data[0x10..0x410].to_vec();
+		}
+		
+		return Some(
+			Gd::from_init_fn(|base| {
+				BinPalette {
+					base: base,
+					palette: PackedByteArray::from(palette),
+				}
+			})
+		);
 	}
 	
 	
@@ -200,6 +212,77 @@ impl BinPalette {
 				}
 			})
 		);
+	}
+	
+	
+	/// Saves the palette to an .act file.
+	#[func]
+	pub fn to_act_file(&self, path: String) {
+		let path_buf: PathBuf = PathBuf::from(path);
+		
+		if !path_buf.exists() {
+			return;
+		}
+		
+		let palette: Vec<u8> = self.palette.to_vec();
+		let color_count: usize = palette.len() / 4;
+		
+		match File::create(&path_buf) {
+			Ok(file) => {
+				let ref mut buffer = BufWriter::new(file);
+				let mut act_pal: Vec<u8> = Vec::new();
+				
+				for color in 0..color_count {
+					act_pal.push(palette[4 * color + 0]);
+					act_pal.push(palette[4 * color + 1]);
+					act_pal.push(palette[4 * color + 2]);
+				}
+				
+				act_pal.resize(256 * 3, 0u8);
+				act_pal.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
+				
+				let _ = buffer.write_all(&act_pal);
+				let _ = buffer.flush();
+			},
+			
+			_ => (),
+		}
+	}
+	
+	
+	/// Saves the palette to a .bin file.
+	pub fn to_bin_file(&self, path_buf: PathBuf) {
+		if !path_buf.exists() {
+			return;
+		}
+		
+		match File::create(&path_buf) {
+			Ok(file) => {
+				let ref mut buffer = BufWriter::new(file);
+				let _ = buffer.write_all(&self.to_bin());
+				let _ = buffer.flush();
+			},
+			
+			_ => (),
+		}
+	}
+	
+	
+	pub fn to_bin(&self) -> Vec<u8> {
+		let palette: Vec<u8> = self.palette.to_vec();
+		let color_count: usize = palette.len() / 4;
+		let mut header = Self::DEFAULT_HEADER.clone();
+		
+		if color_count < 17 {
+			header[4] = 0x04;
+		}
+		
+		let mut bin_data: Vec<u8> = Vec::new();
+		
+		bin_data.extend(header);
+		bin_data.extend(palette);
+		
+		return bin_data;
 	}
 	
 	

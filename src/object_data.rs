@@ -130,6 +130,9 @@ impl ObjectData {
 	pub fn get_as_binary(&self) -> Vec<u8> {
 		let mut bin_data: Vec<u8> = Vec::new();
 		
+		// TODO !!!
+		// GET OBJECTS INDIVIDUALLY, THEN GENERATE POINTERS!!!
+		
 		bin_data.extend(self.get_binary_cells());
 		bin_data.extend(self.get_binary_sprites());
 		bin_data.extend(self.script.to_vec());

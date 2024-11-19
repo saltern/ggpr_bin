@@ -26,6 +26,12 @@ enum ResourceError {
 }
 
 
+enum ObjectType {
+	Object,
+	Unsupported,
+}
+
+
 const WBND_SIGNATURE: usize = 0x444E4257;
 const VAGP_SIGNATURE: [u8; 4] = [0x56, 0x41, 0x47, 0x70];
 
@@ -241,8 +247,10 @@ impl BinResource {
 				&bin_data, header_pointers[pointer], false);
 			
 			// Check if first object contains exactly four pointers, ...
-			if pointer == 0 && pointers_this_object.len() != 4 {
-				return false;
+			if pointer == 0 {
+				if pointers_this_object.len() != 4 {
+					return false;
+				}
 			}
 			
 			// ... then if other objects contain exactly three pointers.
@@ -305,34 +313,44 @@ impl BinResource {
 		*/
 		
 		// For every sub object
+		let mut object_number: usize = 0;
 		for object in 0..header_pointers.len() {
-			let new_object: Dictionary;
-		
+			let object_bin_data: Vec<u8>;
+			let dictionary: Dictionary;
+			
+			// If this is the last object
 			if object == header_pointers.len() - 1 {
-				new_object = Self::load_character_object(
-					bin_data[header_pointers[object]..].to_vec()
-				);
-				
-				// TODO
-				// TODO
-				// TODO
-				// TODO
-				// TODO
-				let object_data: Gd<ObjectData> = new_object.at("data");
-				let binding = object_data.bind();
-				
-				if binding.has_palettes() {
-					binding.name = "player".into();
-				}
+				object_bin_data = bin_data[header_pointers[object]..].to_vec();
 			}
 			
 			else {
-				new_object = Self::load_character_object(
-					bin_data[header_pointers[object]..header_pointers[object + 1]].to_vec()
-				);
+				object_bin_data = bin_data[header_pointers[object]..header_pointers[object + 1]].to_vec();
 			}
 			
-			character_dictionary.set(object as u32, new_object);
+			// Get and load per object type
+			match Self::identify_object(&object_bin_data) {
+				ObjectType::Object => {
+					let object_data: Gd<ObjectData> = Self::load_character_object(object_bin_data, object_number);
+					
+					if object_data.bind().name != "Player".into() {
+						object_number += 1;
+					}
+				
+					dictionary = dict! {
+						"type": "object",
+						"data": object_data,
+					};
+				},
+				
+				ObjectType::Unsupported => {
+					dictionary = dict! {
+						"type": "unsupported",
+						"data": PackedByteArray::from(object_bin_data),
+					};
+				},
+			}
+			
+			character_dictionary.set(object as u32, dictionary);
 		}
 		
 		let bin_resource = Gd::from_init_fn(|base| {
@@ -346,23 +364,14 @@ impl BinResource {
 	}
 	
 	
-	// Single object
-	fn load_character_object(bin_data: Vec<u8>) -> Dictionary {
-		let pointers: Vec<usize> = Self::get_pointers(&bin_data, 0x00, false);
+	// Identify object type
+	fn identify_object(bin_data: &Vec<u8>) -> ObjectType {
 		let pointers_vagp: Vec<usize> = Self::get_pointers(&bin_data, 0x00, true);
 		
-		let mut object_dictionary: Dictionary = Dictionary::new();
-		
-		// Check if audio array first
-		// WBND
 		if pointers_vagp[0] == WBND_SIGNATURE {
-			return dict! {
-				"type": "unsupported",
-				"data": bin_data,
-			}
+			return ObjectType::Unsupported;
 		}
 		
-		// VAGp
 		if bin_data.len() > pointers_vagp[0] {
 			let signature: Vec<u8> = vec![
 				bin_data[pointers_vagp[0] + 0x00],
@@ -372,31 +381,40 @@ impl BinResource {
 			];
 			
 			if signature == VAGP_SIGNATURE {
-				return dict! {
-					"type": "unsupported",
-					"data": bin_data,
-				};
+				return ObjectType::Unsupported;
 			}
 		}
 		
-		object_dictionary.set("type", "object");
+		return ObjectType::Object;
+	}
+	
+	
+	// Single object
+	fn load_character_object(bin_data: Vec<u8>, number: usize) -> Gd<ObjectData> {
+		let pointers: Vec<usize> = Self::get_pointers(&bin_data, 0x00, false);
 		
+		let mut name = format!("Object #{}", number);
+		let cells = Self::load_cells(&bin_data, &pointers);
+		let sprites = Self::load_sprites(&bin_data, &pointers);
+		let script = PackedByteArray::from(Self::load_script(&bin_data, &pointers));
+		let palettes = Self::load_palettes(&bin_data, &pointers);
+		
+		if palettes.len() > 0 {
+			name = "Player".into();
+		}
 		
 		let object_data = Gd::from_init_fn(|base| {
 			ObjectData {
 				base: base,
-				name: "".into(),
-				cells: Self::load_cells(&bin_data, &pointers),
-				sprites: Self::load_sprites(&bin_data, &pointers),
-				script: PackedByteArray::from(Self::load_script(&bin_data, &pointers)),
-				palettes: Self::load_palettes(&bin_data, &pointers),
+				name: name.into(),
+				cells: cells,
+				sprites: sprites,
+				script: script,
+				palettes: palettes,
 			}
 		});
 		
-		return dict! {
-			"type": "object",
-			"data": object_data,
-		};
+		return object_data;
 	}
 	
 	
@@ -506,12 +524,12 @@ impl BinResource {
 	
 	
 	// Multi-object character
-	#[func]
-	pub fn save_resource_file(data: Dictionary, path: String) {
-		let mut file_vector: Vec<u8> = Vec::new();
+	// #[func]
+	// pub fn save_resource_file(data: Dictionary, path: String) {
+		// let mut file_vector: Vec<u8> = Vec::new();
 		
-		for (item, object_data) in data.iter_shared().typed::<u32, Gd<ObjectData>>() {
+		// for (item, object_data) in data.iter_shared().typed::<u32, Gd<ObjectData>>() {
 			
-		}
-	}
+		// }
+	// }
 }

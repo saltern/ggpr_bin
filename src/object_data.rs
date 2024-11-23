@@ -11,11 +11,6 @@ use crate::sprite_load_save::SpriteLoadSave;
 
 use godot::prelude::*;
 
-/*
-		type: full_object,
-		type: sprite_list,
- */
-
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -25,9 +20,8 @@ pub struct ObjectData {
 	#[export] pub name: GString,
 	#[export] pub cells: Array<Gd<Cell>>,
 	#[export] pub sprites: Array<Gd<BinSprite>>,
-	#[export] pub script: PackedByteArray,
+	#[export] pub scripts: PackedByteArray,
 	#[export] pub palettes: Array<Gd<BinPalette>>,
-	//#[var] pub object_script: Gd<ObjectScript>,
 }
 
 
@@ -39,7 +33,7 @@ impl IResource for ObjectData {
 			name: "".into(),
 			cells: array![],
 			sprites: array![],
-			script: PackedByteArray::new(),
+			scripts: PackedByteArray::new(),
 			palettes: Array::new(),
 		}
 	}
@@ -127,16 +121,45 @@ impl ObjectData {
 	}
 	
 	
+	#[func]
 	pub fn get_as_binary(&self) -> Vec<u8> {
 		let mut bin_data: Vec<u8> = Vec::new();
 		
-		// TODO !!!
-		// GET OBJECTS INDIVIDUALLY, THEN GENERATE POINTERS!!!
+		let binary_cells	= self.get_binary_cells();
+		let binary_sprites	= self.get_binary_sprites();
+		let binary_scripts	= self.scripts.to_vec();
+		let binary_palettes	= self.get_binary_palettes();
 		
-		bin_data.extend(self.get_binary_cells());
-		bin_data.extend(self.get_binary_sprites());
-		bin_data.extend(self.script.to_vec());
-		bin_data.extend(self.get_binary_palettes());
+		let pointer_cells: u32;
+		
+		if binary_palettes.is_empty() {
+			pointer_cells = 0x10;
+		} else {
+			pointer_cells = 0x20;
+		}
+		
+		let pointer_sprites: u32 = pointer_cells + binary_cells.len() as u32;
+		let pointer_scripts: u32 = pointer_sprites + binary_sprites.len() as u32;
+		
+		bin_data.extend(pointer_cells.to_le_bytes());
+		bin_data.extend(pointer_sprites.to_le_bytes());
+		bin_data.extend(pointer_scripts.to_le_bytes());
+		
+		if !binary_palettes.is_empty() {
+			let pointer_palettes: u32 = pointer_scripts + binary_scripts.len() as u32;
+			bin_data.extend(pointer_palettes.to_le_bytes());
+			bin_data.extend(0xFFFF_FFFF_u32.to_le_bytes());
+			bin_data.extend(0xFFFF_FFFF_u32.to_le_bytes());
+			bin_data.extend(0xFFFF_FFFF_u32.to_le_bytes());
+		}
+		
+		bin_data.extend(0xFFFF_FFFF_u64.to_le_bytes());
+		
+		bin_data.extend(binary_cells);
+		bin_data.extend(binary_sprites);
+		bin_data.extend(binary_scripts);
+		bin_data.extend(binary_palettes);
+		
 		return bin_data;
 	}
 	
@@ -230,8 +253,8 @@ impl ObjectData {
 		vector_full.extend(vector_palettes);
 		return vector_full;
 	}
-	
-	
+
+
 	// =================================================================================
 	// LOADING (DIRECTORY)
 	// =================================================================================

@@ -264,6 +264,10 @@ pub fn get_bin_data(bin_data: Vec<u8>) -> Option<SpriteData> {
 		let mut pixels: Vec<u8> = vec![0; bin_data.len() - pointer];
 		pixels.copy_from_slice(&bin_data[pointer..]);
 		
+		if header.bit_depth == 4 {
+			pixels = sprite_transform::bpp_from_4(pixels, true);
+		}
+		
 		return Some(
 			SpriteData {
 				width: header.width,

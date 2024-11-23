@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::io::BufWriter;
 use std::fs;
 use std::path::PathBuf;
 
@@ -10,31 +12,8 @@ use crate::sprite_load_save::SpriteLoadSave;
 use crate::object_data::ObjectData;
 
 
-enum ResourceType {
-	Character,
-	ArchiveJPF,
-	SpriteList,
-	SpriteObjects,
-	Select,
-}
-
-
-enum ResourceError {
-	TooShort,
-	Encrypted,
-	Unidentified,
-}
-
-
-enum ObjectType {
-	Object,
-	Unsupported,
-}
-
-
 const WBND_SIGNATURE: usize = 0x444E4257;
 const VAGP_SIGNATURE: [u8; 4] = [0x56, 0x41, 0x47, 0x70];
-
 
 const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
 	// Uncompressed
@@ -70,12 +49,46 @@ const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
  */
 
 
+#[derive(GodotConvert, Var, Export)]
+#[godot(via = GString)]
+pub enum ResourceType {
+	Undefined,
+	Character,
+	ArchiveJPF,
+	SpriteList,
+	SpriteObjects,
+	Select,
+}
+
+
+enum ResourceError {
+	TooShort,
+	Encrypted,
+	Unidentified,
+}
+
+
+#[derive(GodotConvert, Var, Export)]
+#[godot(via = GString)]
+pub enum ObjectType {
+	Object,
+	SpriteList,			// Unnecessary?
+	SpriteListSelect,	// Unnecessary?
+	JPFPlainText,
+	WiiTPL,				// Unnecessary?
+	SubObjects,
+	Dummy,
+	Unsupported,
+}
+
+
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Representation of a single binary resource file.
 struct BinResource {
 	base: Base<Resource>,
-	#[export] pub data: Dictionary,
+	#[export] pub resource_type: ResourceType,
+	#[export] pub objects: Dictionary,
 }
 
 
@@ -84,7 +97,8 @@ impl IResource for BinResource {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
 			base: base,
-			data: Dictionary::new(),
+			resource_type: ResourceType::Undefined,
+			objects: Dictionary::new(),
 		}
 	}
 }
@@ -123,18 +137,6 @@ impl BinResource {
 			},
 			
 			Err(_err_type) => return None,
-			
-			// Err(err_type) => match err_type {
-				// ResourceError::TooShort => return dict! {
-					// "error": "File too short!",
-				// },
-				// ResourceError::Encrypted => return dict! {
-					// "error": "File encrypted!",
-				// },
-				// ResourceError::Unidentified => return dict! {
-					// "error": "Unidentified file type!",
-				// },
-			// }
 		}
 	}
 	
@@ -292,23 +294,13 @@ impl BinResource {
 		let mut character_dictionary: Dictionary = Dictionary::new();
 		
 		/*
-			data = {
-				0: {
-					type: "object",
-					data: ObjectData,
-				},
-				
-				1: {
-					type: "object",
-					data: ObjectData,
-				},
+			"objects" = {
+				0: ObjectData,
+				1: ObjectData,
 				
 				...
 				
-				4: {
-					type: "unsupported",
-					data: PackedByteArray,
-				}
+				4: PackedByteArray,
 			}
 		*/
 		
@@ -342,7 +334,7 @@ impl BinResource {
 					};
 				},
 				
-				ObjectType::Unsupported => {
+				_ => {
 					dictionary = dict! {
 						"type": "unsupported",
 						"data": PackedByteArray::from(object_bin_data),
@@ -356,7 +348,8 @@ impl BinResource {
 		let bin_resource = Gd::from_init_fn(|base| {
 			Self {
 				base: base,
-				data: character_dictionary,
+				resource_type: ResourceType::Character,
+				objects: character_dictionary,
 			}
 		});
 		
@@ -396,7 +389,7 @@ impl BinResource {
 		let mut name = format!("Object #{}", number);
 		let cells = Self::load_cells(&bin_data, &pointers);
 		let sprites = Self::load_sprites(&bin_data, &pointers);
-		let script = PackedByteArray::from(Self::load_script(&bin_data, &pointers));
+		let scripts = PackedByteArray::from(Self::load_scripts(&bin_data, &pointers));
 		let palettes = Self::load_palettes(&bin_data, &pointers);
 		
 		if palettes.len() > 0 {
@@ -409,7 +402,7 @@ impl BinResource {
 				name: name.into(),
 				cells: cells,
 				sprites: sprites,
-				script: script,
+				scripts: scripts,
 				palettes: palettes,
 			}
 		});
@@ -480,18 +473,18 @@ impl BinResource {
 	}
 	
 	
-	fn load_script(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<u8> {
+	fn load_scripts(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<u8> {
 		// Load script
-		let script: Vec<u8>;
+		let scripts: Vec<u8>;
 		if pointers.len() == 4 {
-			script = bin_data[pointers[2]..pointers[3]].to_vec();
+			scripts = bin_data[pointers[2]..pointers[3]].to_vec();
 		}
 		
 		else {
-			script = bin_data[pointers[2]..].to_vec();
+			scripts = bin_data[pointers[2]..].to_vec();
 		}
 		
-		return script;
+		return scripts;
 	}
 	
 	
@@ -523,13 +516,90 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	// Multi-object character
-	// #[func]
-	// pub fn save_resource_file(data: Dictionary, path: String) {
-		// let mut file_vector: Vec<u8> = Vec::new();
+	#[func] pub fn save_resource_file(dictionary: Dictionary, path: String) {	
+		let mut path_buf: PathBuf = PathBuf::from(path);
 		
-		// for (item, object_data) in data.iter_shared().typed::<u32, Gd<ObjectData>>() {
+		if !path_buf.exists() {
+			godot_print!("Path does not exist!");
+			return;
+		}
+		
+		let mut file_vector: Vec<u8> = Vec::new();
+		let mut data_vector: Vec<u8> = Vec::new();
+		let mut header_pointers: Vec<u32> = Vec::new();
+		
+		for (_object, data) in dictionary.iter_shared() {
+			let this_dict: Dictionary = data.to();
+							
+			header_pointers.push(data_vector.len() as u32);
 			
-		// }
-	// }
+			match this_dict.get("type") {
+				Some(string_type) => {
+					// Comes in as a Variant
+					let string: String = string_type.to();
+					
+					match string.as_str() {
+						"object" => {
+							let object_data: Gd<ObjectData> = this_dict.at("data").to();
+							let binding = object_data.bind();
+							let binary_data: Vec<u8> = binding.get_as_binary();
+							
+							let mut test_obj: PathBuf = path_buf.clone();
+							test_obj.push(format!("obj_{}.bin", header_pointers.len() - 1));
+							
+							match fs::File::create(test_obj) {
+								Ok(file) => {
+									let ref mut buffer = BufWriter::new(file);
+									let _ = buffer.write(&binary_data);
+									let _ = buffer.flush();
+								},
+								
+								_ => (),
+							}
+							
+							data_vector.extend(binary_data);
+						},
+						
+						_ => {
+							let packed_array: PackedByteArray = this_dict.at("data").to();
+							data_vector.extend(packed_array.to_vec());
+						},
+					}
+				},
+				
+				_ => godot_print!("Invalid dictionary entry!"),
+			}
+		}
+		
+		// Pad pointers
+		let pointer_count: usize = header_pointers.len();
+		
+		header_pointers.push(0xFFFFFFFF);
+		
+		while header_pointers.len() % 4 != 0 {
+			header_pointers.push(0xFFFFFFFF);
+		}
+		
+		for pointer in 0..pointer_count {
+			header_pointers[pointer] += 4 * header_pointers.len() as u32;
+		}
+		
+		for pointer in 0..header_pointers.len() {
+			file_vector.extend(header_pointers[pointer].to_le_bytes());
+		}
+		
+		file_vector.extend(data_vector);
+		
+		path_buf.push("test.bin");
+		
+		match fs::File::create(path_buf) {
+			Ok(file) => {
+				let ref mut buffer = BufWriter::new(file);
+				let _ = buffer.write_all(&file_vector);
+				let _ = buffer.flush();
+			},
+			
+			_ => (),
+		}
+	}
 }

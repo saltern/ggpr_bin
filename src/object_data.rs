@@ -153,7 +153,7 @@ impl ObjectData {
 			bin_data.extend(0xFFFF_FFFF_u32.to_le_bytes());
 		}
 		
-		bin_data.extend(0xFFFF_FFFF_u64.to_le_bytes());
+		bin_data.extend(0xFFFF_FFFF_u32.to_le_bytes());
 		
 		bin_data.extend(binary_cells);
 		bin_data.extend(binary_sprites);
@@ -164,94 +164,109 @@ impl ObjectData {
 	}
 	
 	
+	// Correct output
 	fn get_binary_cells(&self) -> Vec<u8> {
 		let mut vector_cells: Vec<u8> = Vec::new();
-		let mut vector_offsets: Vec<u32> = Vec::new();
-		let mut cursor_offsets: u32 = 0x00;
+		let mut vector_pointers: Vec<u32> = Vec::new();
 		
 		for cell in self.cells.iter_shared() {
 			let cell_bin: Vec<u8> = cell.bind().to_bin();
-			
-			vector_offsets.push(cursor_offsets);
-			cursor_offsets += cell_bin.len() as u32;
-			
+			vector_pointers.push(vector_cells.len() as u32);
 			vector_cells.extend(cell_bin);
 		}
 		
-		vector_offsets.resize(
-			vector_offsets.len() + vector_offsets.len() % 0x04, 0xFFFFFFFF
-		);
+		let pointer_count: usize = vector_pointers.len();
+		vector_pointers.push(0xFFFFFFFF);
 		
-		let mut vector_full: Vec<u8> = Vec::new();
-		
-		// Register cell pointers
-		for offset in vector_offsets.iter() {
-			vector_full.extend((offset + vector_offsets.len() as u32).to_le_bytes());
+		while vector_pointers.len() % 4 != 0 {
+			vector_pointers.push(0xFFFFFFFF);
 		}
 		
-		vector_full.extend(vector_cells);
-		return vector_full;
+		for pointer in 0..pointer_count {
+			vector_pointers[pointer] += 4 * vector_pointers.len() as u32;
+		}
+		
+		let mut vector_binary: Vec<u8> = Vec::new();
+		
+		// Register cell pointers
+		for pointer in vector_pointers.iter() {
+			vector_binary.extend(pointer.to_le_bytes());
+		}
+		
+		vector_binary.extend(vector_cells);
+		return vector_binary;
 	}
 	
 	
+	// Incorrect output (for some reason??? Player sprites are fine)
 	fn get_binary_sprites(&self) -> Vec<u8> {
 		let mut vector_sprites: Vec<u8> = Vec::new();
-		let mut vector_offsets: Vec<u32> = Vec::new();
-		let mut cursor_offsets: u32 = 0x00;
+		let mut vector_pointers: Vec<u32> = Vec::new();
 		
 		for sprite in self.sprites.iter_shared() {
 			let sprite_bin: Vec<u8> = sprite.bind().to_bin();
-			
-			vector_offsets.push(cursor_offsets);
-			cursor_offsets += sprite_bin.len() as u32;
-			
+			vector_pointers.push(vector_sprites.len() as u32);
 			vector_sprites.extend(sprite_bin);
 			
 		}
 		
-		vector_offsets.resize(
-			vector_offsets.len() + vector_offsets.len() % 0x04, 0xFFFFFFFF
-		);
+		let pointer_count: usize = vector_pointers.len();
+		vector_pointers.push(0xFFFFFFFF);
 		
-		let mut vector_full: Vec<u8> = Vec::new();
-		
-		// Register sprite pointers
-		for offset in vector_offsets.iter() {
-			vector_full.extend((offset + vector_offsets.len() as u32).to_le_bytes());
+		while vector_pointers.len() % 4 != 0 {
+			vector_pointers.push(0xFFFFFFFF);
 		}
 		
-		vector_full.extend(vector_sprites);
-		return vector_full;
+		for pointer in 0..pointer_count {
+			vector_pointers[pointer] += 4 * vector_pointers.len() as u32;
+		}
+		
+		let mut vector_binary: Vec<u8> = Vec::new();
+		
+		// Register sprite pointers
+		for pointer in vector_pointers.iter() {
+			vector_binary.extend(pointer.to_le_bytes());
+		}
+		
+		vector_binary.extend(vector_sprites);
+		return vector_binary;
 	}
 	
 	
 	fn get_binary_palettes(&self) -> Vec<u8> {
+		if self.palettes.len() < 1 {
+			return Vec::new();
+		}
+		
 		let mut vector_palettes: Vec<u8> = Vec::new();
-		let mut vector_offsets: Vec<u32> = Vec::new();
-		let mut cursor_offsets: u32 = 0x00;
+		let mut vector_pointers: Vec<u32> = Vec::new();
 		
 		for palette in self.palettes.iter_shared() {
 			let palette_bin: Vec<u8> = palette.bind().to_bin();
-			
-			vector_offsets.push(cursor_offsets);
-			cursor_offsets += palette_bin.len() as u32;
-			
+			vector_pointers.push(vector_palettes.len() as u32);
 			vector_palettes.extend(palette_bin);
 		}
 		
-		vector_offsets.resize(
-			vector_offsets.len() + vector_offsets.len() % 0x04, 0xFFFFFFFF
-		);
+		let pointer_count: usize = vector_pointers.len();
+		vector_pointers.push(0xFFFFFFFF);
 		
-		let mut vector_full: Vec<u8> = Vec::new();
-		
-		// Register palette pointers
-		for offset in vector_offsets.iter() {
-			vector_full.extend((offset + vector_offsets.len() as u32).to_le_bytes());
+		while vector_pointers.len() % 4 != 0 {
+			vector_pointers.push(0xFFFFFFFF);
 		}
 		
-		vector_full.extend(vector_palettes);
-		return vector_full;
+		for pointer in 0..pointer_count {
+			vector_pointers[pointer] += 4 * vector_pointers.len() as u32;
+		}
+		
+		let mut vector_binary: Vec<u8> = Vec::new();
+		
+		// Register palette pointers
+		for pointer in vector_pointers.iter() {
+			vector_binary.extend(pointer.to_le_bytes());
+		}
+		
+		vector_binary.extend(vector_palettes);
+		return vector_binary;
 	}
 
 

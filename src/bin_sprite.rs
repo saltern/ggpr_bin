@@ -184,6 +184,7 @@ impl BinSprite {
 		let iterations_u32: u32 = compressed_data.iterations as u32;
 		
 		bin_data.extend(header);
+		bin_data.extend(self.palette.to_vec());
 		bin_data.extend_from_slice(&[
 			(iterations_u32 >> 16) as u8,
 			(iterations_u32 >> 24) as u8,

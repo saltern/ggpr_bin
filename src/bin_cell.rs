@@ -160,8 +160,8 @@ impl Cell {
 		bin_data.extend((self.unknown_2).to_le_bytes());
 		
 		// Pad and align
-		if bin_data.len() % 0x10 != 0x00 {
-			bin_data.resize(bin_data.len() + bin_data.len() % 0x10, 0xFF);
+		while bin_data.len() % 0x10 != 0x00 {
+			bin_data.push(0xFF);
 		}
 		
 		return bin_data;

@@ -2,6 +2,7 @@ use godot::prelude::*;
 
 // Gear Studio
 pub mod bin_resource;
+pub mod bin_identify;
 pub mod bin_cell;
 pub mod bin_sprite;
 pub mod bin_palette;

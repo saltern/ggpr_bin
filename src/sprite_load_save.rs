@@ -118,7 +118,6 @@ impl SpriteLoadSave {
 			// Pixel array
 			&PackedByteArray::from(sprite_data.pixels.clone())
 		);
-		// godot_print!("\t* made");
 		
 		match sprite_image {
 			Some(image) => return Some(BinSprite::new_from_data(

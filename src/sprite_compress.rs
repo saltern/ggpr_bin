@@ -143,7 +143,7 @@ pub fn compress(mut data: SpriteData) -> CompressedData {
 }
 
 
-pub fn decompress(bin_data: Vec<u8>, header: BinHeader) -> SpriteData {
+pub fn decompress(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	let pixel_count: usize = header.width as usize * header.height as usize;
 	let mut pointer: usize = 0x10;
 	let mut palette: Vec<u8> = Vec::new();

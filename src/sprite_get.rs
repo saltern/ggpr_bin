@@ -214,7 +214,7 @@ pub fn get_raw(source_file: &PathBuf) -> Option<SpriteData> {
 
 pub fn get_bin(source_file: &PathBuf) -> Option<SpriteData> {
 	match fs::read(source_file) {
-		Ok(bin_data) => return get_bin_data(bin_data),
+		Ok(bin_data) => return get_bin_data(&bin_data),
 		_ => {
 			println!("sprite_get::get_bin() error: BIN file read error");
 			println!("\tSkipped: {}", &source_file.display());
@@ -224,7 +224,7 @@ pub fn get_bin(source_file: &PathBuf) -> Option<SpriteData> {
 }
 
 
-pub fn get_bin_data(bin_data: Vec<u8>) -> Option<SpriteData> {
+pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 	if bin_data.len() < 0x20 {
 		println!("Input .BIN file has less than 32 bytes, skipping.");
 		return None;

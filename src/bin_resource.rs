@@ -33,6 +33,15 @@ use crate::object_data::ObjectData;
  */
 
 
+struct Scriptable {
+	name: String,
+	cells: Array<Gd<Cell>>,
+	sprites: Array<Gd<BinSprite>>,
+	scripts: PackedByteArray,
+	palettes: Array<Gd<BinPalette>>,
+}
+
+
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Representation of a single binary resource file.
@@ -114,7 +123,7 @@ impl BinResource {
 		let mut object_number: usize = 0;
 		for object in 0..header_pointers.len() {
 			let object_bin_data: Vec<u8>;
-			let dictionary: Dictionary;
+			let mut dictionary: Dictionary;
 			
 			// If this is the last object
 			if object == header_pointers.len() - 1 {
@@ -130,14 +139,16 @@ impl BinResource {
 			
 			
 				ObjectType::Sprite => {
-					let sprite_data: Vec<u8> = object_bin_data[0x10..].to_vec();
-					let sprite = SpriteLoadSave::load_sprite_data(sprite_data);
+					let sprite = SpriteLoadSave::load_sprite_data(&object_bin_data);
+					let mut array: Array<Gd<BinSprite>> = Array::new();
 					
 					match sprite {
 						Some(bin_sprite) => {
+							array.push(&bin_sprite);
+							
 							dictionary = dict! {
 								"type": "sprite",
-								"data": bin_sprite,
+								"sprites": array,
 							}
 						},
 						
@@ -149,21 +160,22 @@ impl BinResource {
 						},
 					}
 				}
-			
-			
+				
+				
 				ObjectType::SpriteListSelect => {
 					let pointers: Vec<usize> = get_pointers(&object_bin_data, 0x00, false);
 					let last_pointer = pointers[pointers.len() - 1];
-					let sprites = Self::load_sprite_list(&object_bin_data);
+					let mut sprites = Self::load_sprite_list(&object_bin_data, 0);
+					let _ = sprites.pop();
 					
-					let select_w: u32::from_le_bytes([
+					let select_w = u32::from_le_bytes([
 						object_bin_data[last_pointer + 0x00],
 						object_bin_data[last_pointer + 0x01],
 						object_bin_data[last_pointer + 0x02],
 						object_bin_data[last_pointer + 0x03],
 					]);
 					
-					let select_h: u32::from_le_bytes([
+					let select_h = u32::from_le_bytes([
 						object_bin_data[last_pointer + 0x04],
 						object_bin_data[last_pointer + 0x05],
 						object_bin_data[last_pointer + 0x06],
@@ -171,33 +183,24 @@ impl BinResource {
 					]);
 					
 					let select_pixels = PackedByteArray::from(
-						object_bin_data[last_pointer + 0x08..last_pointer + (select_w * select_h) as usize]);
+						object_bin_data[last_pointer + 0x08..last_pointer + (select_w * select_h) as usize].to_vec());
 					
 					dictionary = dict! {
 						"type": "sprite_list_select",
 						"sprites": sprites,
-						"bitmask": bitmask,
+						"select_width": select_w,
+						"select_height": select_h,
+						"select_pixels": select_pixels,
 					};
 				},
 				
 				
 				ObjectType::SpriteList => {
-					let sprites = Self::load_sprite_list(&object_bin_data);
-					
-					let object_data: Gd<ObjectData> = Gd::from_init_fn(|base| {
-						ObjectData {
-							base: base,
-							name: format!("Object #{}", object_number).into(),
-							cells: array![],
-							sprites: sprites,
-							scripts: PackedByteArray::new(),
-							palettes: Array::new(),
-						}
-					});
+					let sprites = Self::load_sprite_list(&object_bin_data, 0);
 					
 					dictionary = dict! {
 						"type": "sprite_list",
-						"data": object_data,
+						"sprites": sprites,
 					};
 				},
 				
@@ -209,69 +212,42 @@ impl BinResource {
 						object_bin_data[pointers[0]..pointers[1]].to_vec()
 					);
 					
-					let mut sprites: Array<Gd<BinSprite>> = Array::new();
-					
-					for pointer in 1..pointers.len() {
-						let sprite_bin_data: Vec<u8>;
-						let end: usize;
-						
-						if pointer < pointers.len() - 1 {
-							end = pointers[pointer + 1];
-							sprite_bin_data = object_bin_data[pointers[pointer]..end].to_vec();
-						}
-						
-						else {
-							sprite_bin_data = object_bin_data[pointers[pointer]..].to_vec();
-						}
-						
-						match SpriteLoadSave::load_sprite_data(sprite_bin_data) {
-							Some(sprite) => {
-								sprites.push(&sprite);
-							},
-							
-							None => {
-								sprites.push(&BinSprite::new_gd());
-							},
-						}
-					}
-					
-					let mut object_data: Gd<ObjectData> = ObjectData::new_gd();
-					
-					// I can't believe this works
-					if true {
-						let mut binding = object_data.bind_mut();
-						binding.sprites = sprites;
-					}
+					let sprites: Array<Gd<BinSprite>> = Self::load_sprite_list(&object_bin_data, 1);
 					
 					dictionary = dict! {
 						"type": "jpf_plain_text",
 						"char_index": char_index,
-						"data": object_data,
+						"sprites": sprites,
 					}
 				},
 				
 				
 				ObjectType::Scriptable => {
-					let object_data: Gd<ObjectData> = Self::load_scriptable(object_bin_data, object_number);
+					let scriptable: Scriptable = Self::load_scriptable(object_bin_data, object_number);
 					
-					if object_data.bind().name != "Player".into() {
+					if scriptable.name != "Player" {
 						object_number += 1;
 					}
-				
+					
 					dictionary = dict! {
 						"type": "scriptable",
-						"data": object_data,
+						"name": scriptable.name,
+						"cells": scriptable.cells,
+						"sprites": scriptable.sprites,
+						"scripts": scriptable.scripts,
 					};
+					
+					if scriptable.palettes.len() > 0 {
+						dictionary.set("palettes", scriptable.palettes);
+					}
 				},
 				
 				
 				// Only used by archive_jpf.bin, for speed,
 				// assume rather than try to ID each object
 				ObjectType::MultiScriptable => {
-					let scriptable_pointers: Vec<usize> = get_pointers(
-						&object_bin_data, 0x00, false);
-					
-					let mut scriptables: Dictionary = dict! {};
+					let scriptable_pointers: Vec<usize> = get_pointers(&object_bin_data, 0x00, false);
+					let mut scriptable_list: Dictionary = dict! {};
 					
 					for pointer in 0..scriptable_pointers.len() {
 						let scriptable_bin_data: Vec<u8>;
@@ -286,12 +262,21 @@ impl BinResource {
 							scriptable_bin_data = object_bin_data[start..].to_vec();
 						}
 						
-						scriptables.set(pointer as i64, Self::load_scriptable(scriptable_bin_data, pointer));
+						let scriptable: Scriptable = Self::load_scriptable(scriptable_bin_data, pointer);
+						let scriptable_dict: Dictionary = dict! {
+							"name": format!("Effect #{}", pointer),
+							"type": "scriptable",
+							"cells": scriptable.cells,
+							"sprites": scriptable.sprites,
+							"scripts": scriptable.scripts,
+						};
+						
+						scriptable_list.set(pointer as i64, scriptable_dict);
 					}
 				
 					dictionary = dict! {
 						"type": "multi_scriptable",
-						"data": scriptables,
+						"data": scriptable_list,
 					};
 				},
 				
@@ -316,7 +301,7 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	fn load_scriptable(bin_data: Vec<u8>, number: usize) -> Gd<ObjectData> {
+	fn load_scriptable(bin_data: Vec<u8>, number: usize) -> Scriptable {
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 		
 		let mut name = format!("Object #{}", number);
@@ -329,16 +314,13 @@ impl BinResource {
 			name = "Player".into();
 		}
 		
-		return Gd::from_init_fn(|base| {
-			ObjectData {
-				base: base,
-				name: name.into(),
-				cells: cells,
-				sprites: sprites,
-				scripts: scripts,
-				palettes: palettes,
-			}
-		});
+		return Scriptable {
+			name: name.into(),
+			cells: cells,
+			sprites: sprites,
+			scripts: scripts,
+			palettes: palettes,
+		};
 	}
 	
 	
@@ -384,7 +366,7 @@ impl BinResource {
 				end = pointers[2];
 			}
 			
-			match SpriteLoadSave::load_sprite_data(bin_data[start..end].to_vec()) {
+			match SpriteLoadSave::load_sprite_data(&bin_data[start..end].to_vec()) {
 				Some(sprite) => {
 					sprites.push(&sprite);
 				},
@@ -437,11 +419,11 @@ impl BinResource {
 	}
 	
 	
-	fn load_sprite_list(bin_data: &Vec<u8>) -> Array<Gd<BinSprite>> {
+	fn load_sprite_list(bin_data: &Vec<u8>, from: usize) -> Array<Gd<BinSprite>> {
 		let sprite_pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 		let mut sprites: Array<Gd<BinSprite>> = Array::new();
 		
-		for sprite in 0..sprite_pointers.len() {
+		for sprite in from..sprite_pointers.len() {
 			let sprite_data: Vec<u8>;
 			let start: usize = sprite_pointers[sprite];
 			
@@ -454,7 +436,7 @@ impl BinResource {
 				sprite_data = bin_data[start..].to_vec();
 			}
 			
-			match SpriteLoadSave::load_sprite_data(sprite_data) {
+			match SpriteLoadSave::load_sprite_data(&sprite_data) {
 				Some(sprite) => {
 					sprites.push(&sprite);
 				},

@@ -86,17 +86,17 @@ impl SpriteLoadSave {
 		}
 	
 		match fs::read(file) {
-			Ok(data) => return Self::load_sprite_data(data),
+			Ok(data) => return Self::load_sprite_data(&data),
 			_ => return None,
 		}
 	}
 	
 	
 	// Loads BinSprites from a raw binary data vector.
-	pub fn load_sprite_data(bin_data: Vec<u8>) -> Option<Gd<BinSprite>> {
+	pub fn load_sprite_data(bin_data: &Vec<u8>) -> Option<Gd<BinSprite>> {
 		let sprite_data: SpriteData;
 
-		match sprite_get::get_bin_data(bin_data) {
+		match sprite_get::get_bin_data(&bin_data) {
 			None => return None,
 			Some(data) => {
 				if data.width == 0 || data.height == 0 {

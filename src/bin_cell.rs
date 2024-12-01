@@ -81,11 +81,17 @@ impl IResource for BoxInfo {
 /// Representation of a Guilty Gear cell (a combination of a sprite and hitboxes).
 pub struct Cell {
 	base: Base<Resource>,
+	/// Array containing every box in this cell.
 	#[export] pub boxes: Array<Gd<BoxInfo>>,
+	/// The horizontal offset to display the sprite at.
 	#[export] pub sprite_x_offset: i16,
+	/// The vertical offset to display the sprite at.
 	#[export] pub sprite_y_offset: i16,
+	/// Unknown data. 4 bytes.
 	#[export] pub unknown_1: u32,
+	/// Sprite number to display.
 	#[export] pub sprite_index: u16,
+	/// Unknown data. 2 bytes.
 	#[export] pub unknown_2: u16,
 }
 
@@ -321,7 +327,8 @@ impl Cell {
 	}
 	
 	
-	pub fn clamp_sprite_index(&mut self, sprite_max: u16) {
+	/// Clamps the sprite index for this cell to the specified maximum.
+	#[func] pub fn clamp_sprite_index(&mut self, sprite_max: u16) {
 		self.sprite_index = self.sprite_index.clamp(0, sprite_max);
 	}
 }

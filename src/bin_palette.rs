@@ -46,9 +46,12 @@ impl BinPalette {
 	/// Static constructor for BinPalettes from .bin files.
 	#[func]
 	pub fn from_bin_file(path: String) -> Option<Gd<Self>> {
-		let path_str: String = String::from(path);
-		let path_buf: PathBuf = PathBuf::from(path_str);
-		
+		let path_buf: PathBuf = PathBuf::from(path);
+		return Self::from_bin_file_pathbuf(path_buf);
+	}
+
+
+	pub fn from_bin_file_pathbuf(path_buf: PathBuf) -> Option<Gd<Self>> {
 		if !path_buf.exists() {
 			godot_print!("Could not find palette file!");
 			return None;

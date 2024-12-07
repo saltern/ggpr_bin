@@ -8,7 +8,6 @@ pub mod bin_sprite;
 pub mod bin_palette;
 pub mod sprite_load_save;
 pub mod sprite_import_export;
-pub mod object_data;
 
 // Ghoul
 pub mod sprite_get;

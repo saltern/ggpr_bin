@@ -146,11 +146,13 @@ impl BinSprite {
 	
 	
 	pub fn to_bin(&self) -> Vec<u8> {
-		let image: Gd<Image> = self.image.clone().unwrap();
-		
+		let image = self.image.as_ref().unwrap();
+		let width: u16 = image.get_width() as u16;
+		let height: u16 = image.get_height() as u16;
+	
 		let sprite_data: SpriteData = SpriteData {
-			width: image.get_width() as u16,
-			height: image.get_height() as u16,
+			width: width,
+			height: height,
 			bit_depth: self.bit_depth,
 			pixels: self.pixels.to_vec(),
 			palette: self.palette.to_vec(),
@@ -173,8 +175,8 @@ impl BinSprite {
 			true,
 			0x20 * (self.palette.len() != 0) as u16,
 			self.bit_depth,
-			image.get_width() as u16,
-			image.get_height() as u16,
+			width,
+			height,
 			0x0000,
 			0x0000,
 			hash,

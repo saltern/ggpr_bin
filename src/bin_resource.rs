@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::io::BufWriter;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 use godot::prelude::*;
@@ -119,6 +120,168 @@ impl BinResource {
 		else {
 			return Self::load_resource_file(bin_data);
 		}
+	}
+	
+	
+	/// Loads a parsed resource from a directory, returning the objects contained within.
+	#[func] fn from_path(source_path: String) -> Dictionary {
+		let path_buf: PathBuf = PathBuf::from(&source_path);
+		
+		godot_print!("Loading {}...", &source_path);
+		
+		let mut resource_dictionary: Dictionary = Dictionary::new();
+		
+		if !path_buf.exists() {
+			godot_print!("Path was not found");
+			return dict! {
+				"error": "Path not found",
+			};
+		}
+		
+		let mut object_vector: Vec<Dictionary> = Vec::new();
+			
+		for result_entry in path_buf.read_dir().unwrap() {
+			if result_entry.is_err() {
+				continue;
+			}
+			
+			let entry = result_entry.unwrap();
+			
+			match entry.file_type() {
+				Ok(file_type) => if !file_type.is_dir() {
+					continue;
+				},
+				
+				_ => continue,
+			}
+			
+			
+			// We only get here if a directory was correctly read from the source_path
+			match Self::load_object_directory(entry.path()) {
+				Some(dictionary) => {
+					let name: String = dictionary.at("name").to();
+					
+					if name == "player" {
+						object_vector.insert(0, dictionary);
+					}
+					
+					else {
+						object_vector.push(dictionary);
+					}
+				},
+				
+				_ => (),
+			}
+		}
+			
+		for object in 0..object_vector.len() {
+			resource_dictionary.set(object as i64, object_vector[object].clone());
+		}
+		
+		return resource_dictionary;
+	}
+	
+	
+	fn load_object_directory(path_buf: PathBuf) -> Option<Dictionary> {
+		let mut object_dictionary: Dictionary = Dictionary::new();
+		
+		// Load sprites
+		let sprite_path: PathBuf = Path::new(&path_buf).join("sprites");
+		let sprite_array: Array<Gd<BinSprite>> = SpriteLoadSave::load_sprites_pathbuf(sprite_path);
+		
+		if sprite_array.len() < 1 {
+			// We always need at least one sprite to do anything
+			return None;
+		}
+		
+		object_dictionary.set("sprites", sprite_array);
+		
+		
+		// Load cells (if present)
+		let cell_path: PathBuf = Path::new(&path_buf).join("cells");
+		let mut cell_array: Array<Gd<Cell>> = Array::new();
+		let mut cell_array_len: usize = 0usize;
+		
+		if cell_path.exists() {
+			let mut cell_file_vector: Vec<PathBuf> = Vec::new();
+			
+			match fs::read_dir(cell_path) {
+				Ok(value) => {
+					for entry in value {
+						cell_file_vector.push(entry.unwrap().path());
+					}
+				},
+				
+				_ => (),
+			}
+			
+			cell_file_vector.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
+			
+			for item in cell_file_vector {
+				match Cell::from_file(item) {
+					Some(cell) => cell_array.push(&cell),
+					_ => (),
+				}
+			}
+			
+			// We need this again below
+			cell_array_len = cell_array.len();
+			
+			if cell_array_len > 0 {
+				object_dictionary.set("cells", cell_array);
+			}
+		}
+		
+		let object_name: String = path_buf.file_name().unwrap().to_string_lossy().into();
+		object_dictionary.set("name", object_name.clone());
+		
+		if cell_array_len > 0 {
+			object_dictionary.set("type", "scriptable");
+		
+			// Don't load palettes if not player
+			if object_name != "player" {
+				return Some(object_dictionary);
+			}
+		
+			// Load palettes (if present)
+			let mut palette_path: PathBuf = path_buf.clone();
+			let _ = palette_path.pop();
+			palette_path.push("palettes");
+			
+			if palette_path.exists() {
+				let mut palette_file_vector: Vec<PathBuf> = Vec::new();
+				
+				match fs::read_dir(palette_path) {
+					Ok(value) => {
+						for entry in value {
+							palette_file_vector.push(entry.unwrap().path());
+						}
+					},
+					
+					_ => (),
+				}
+				
+				palette_file_vector.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
+				let mut palette_array: Array<Gd<BinPalette>> = Array::new();
+				
+				for item in palette_file_vector {
+					match BinPalette::from_bin_file_pathbuf(item) {
+						Some(palette) => palette_array.push(&palette),
+						_ => (),
+					}
+				}
+				
+				if palette_array.len() > 0 {
+					object_dictionary.set("palettes", palette_array);
+				}
+			}
+		}
+		
+		else {
+			object_dictionary.set("type", "sprite_list");
+		}
+		
+		return Some(object_dictionary);
 	}
 	
 	
@@ -497,17 +660,24 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	#[func] pub fn save_resource_file(dictionary: Dictionary, path: String) {	
-		let mut path_buf: PathBuf = PathBuf::from(path);
-		
-		if !path_buf.exists() {
-			godot_print!("Path does not exist!");
-			return;
+	#[func] pub fn save_resource_file(dictionary: Dictionary, path: String) {
+		if true {
+			let mut path_check: PathBuf = PathBuf::from(&path);
+			let _ = path_check.pop();
+			
+			if !path_check.exists() {
+				godot_print!("Path does not exist!");
+				return;
+			}
 		}
+		
+		let path_buf: PathBuf = PathBuf::from(path);
 		
 		let mut file_vector: Vec<u8> = Vec::new();
 		let mut data_vector: Vec<u8> = Vec::new();
 		let mut header_pointers: Vec<u32> = Vec::new();
+		
+		godot_print!("We saving'!");
 		
 		for (_object_number, object_dict) in dictionary.iter_shared().typed::<i64, Dictionary>() {
 			header_pointers.push(data_vector.len() as u32);
@@ -552,7 +722,7 @@ impl BinResource {
 		file_vector.extend(Self::finalize_pointers(header_pointers));
 		file_vector.extend(data_vector);
 		
-		path_buf.push("test.bin");
+		godot_print!("Writing to {:?}", path_buf);
 		
 		match fs::File::create(path_buf) {
 			Ok(file) => {
@@ -562,6 +732,82 @@ impl BinResource {
 			},
 			
 			_ => (),
+		}
+	}
+	
+	
+	#[func] pub fn save_resource_directory(session: Dictionary, path: String) {
+		if !PathBuf::from(&path).exists() {
+			godot_print!("Path does not exist!");
+			return;
+		}
+		
+		let dictionary: Dictionary = session.at("data").to();
+		
+		for object in 0..dictionary.len() {
+			let object_dict: Dictionary = dictionary.at(object as i64).to();
+			let mut object_path: String = path.clone();
+			let object_name: String = object_dict.at("name").to();
+			let push: String = format!("/{}", object_name);
+			object_path.push_str(&push);
+			
+			if object_dict.contains_key("sprites") {
+				let sprite_array: Array<Gd<BinSprite>> = object_dict.at("sprites").to();
+				Self::save_sprites_to_path(sprite_array, &object_path);
+			}
+			
+			if object_dict.contains_key("cells") {
+				let cell_array: Array<Gd<Cell>> = object_dict.at("cells").to();
+				Self::save_cells_to_path(cell_array, &object_path);
+			}
+			
+			if object_dict.contains_key("palettes") {
+				let palette_array: Array<Gd<BinPalette>> = object_dict.at("palettes").to();
+				Self::save_palettes_to_path(palette_array, &object_path);
+			}
+		}
+	}
+	
+	
+	fn save_cells_to_path(cell_array: Array<Gd<Cell>>, path: &String) {
+		fs::create_dir_all(format!("{}/cells_0", path)).unwrap();
+		
+		for cell_number in 0..cell_array.len() {
+			let item = cell_array.at(cell_number);
+			let cell = item.bind();
+			cell.to_file(PathBuf::from(format!("{}/cells_0/cell_{}.json", path, cell_number)));
+		}
+		
+		// Replace old files with new
+		let _ = fs::rename(format!("{}/cells_0", path), format!("{}/cells_1", path));
+		let _ = fs::remove_dir_all(format!("{}/cells", path));
+		let _ = fs::rename(format!("{}/cells_1", path), format!("{}/cells", path));
+	}
+	
+	
+	fn save_sprites_to_path(sprite_array: Array<Gd<BinSprite>>, path: &String) {
+		fs::create_dir_all(format!("{}/sprites_0", path)).unwrap();
+		
+		SpriteLoadSave::save_sprites(sprite_array, format!("{}/sprites_0", path));
+		
+		// Replace old files with new
+		let _ = fs::rename(format!("{}/sprites_0", path), format!("{}/sprites_1", path));
+		let _ = fs::remove_dir_all(format!("{}/sprites", path));
+		let _ = fs::rename(format!("{}/sprites_1", path), format!("{}/sprites", path));
+	}
+	
+	
+	fn save_palettes_to_path(palette_array: Array<Gd<BinPalette>>, path: &String) {
+		let mut path_buf: PathBuf = PathBuf::from(path);
+		let _ = path_buf.pop();
+		let _ = path_buf.push("palettes");
+		
+		for palette_number in 0..palette_array.len() {
+			let this_path_buf: PathBuf = path_buf.join(format!("pal_{}.bin", palette_number));
+			let item = palette_array.at(palette_number);
+			let palette = item.bind();
+			
+			palette.to_bin_file(this_path_buf);
 		}
 	}
 	

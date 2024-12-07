@@ -26,13 +26,13 @@ const CELL_LEN_BOX: usize = 0xC;
 #[derive(GodotConvert, Var, Export)]
 #[godot(via = GString)]
 pub enum ObjectType {
-	Sprite,				//			-- Covered
+	Sprite,				// Good		-- Covered
 	SpriteList,			// Good		-- Covered
 	SpriteListSelect,	// Good		-- Covered
-	JPFPlainText,		//
-	WiiTPL,				//
-	Scriptable,			// Good		-- Covered
-	MultiScriptable,	//			-- Covered
+	JPFPlainText,		// Good		-- Covered, currently partially unsupported
+	WiiTPL,				// Good		-- Covered, currently unsupported
+	Scriptable,			// Good		-- Covered, currently partially unsupported
+	MultiScriptable,	// Good		-- Covered
 	Unsupported,
 }
 	
@@ -283,8 +283,8 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 	
 	// If there's only one pointer, there's nothing to compare to.
 	// Ensure at least two.
-	if cell_pointers.len() < 3 {
-		cell_pointers.push(header_pointers[1]);
+	if cell_pointers.len() < 2 {
+		cell_pointers.push(header_pointers[1] - header_pointers[0]);
 	}
 	
 	for pointer in 0..cell_pointers.len() - 1 {

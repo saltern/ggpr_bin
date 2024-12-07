@@ -323,7 +323,7 @@ impl Cell {
 			sprite_info: sprite_info,
 		};
 		
-		return serde_json::to_string(&cell_json).unwrap();
+		return serde_json::to_string_pretty(&cell_json).unwrap();
 	}
 	
 	

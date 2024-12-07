@@ -42,10 +42,14 @@ impl SpriteLoadSave {
 	#[func]
 	pub fn load_sprites(source_path: String) -> Array<Gd<BinSprite>> {
 		let path_buf: PathBuf = PathBuf::from(source_path);
-		
+		return Self::load_sprites_pathbuf(path_buf);
+	}
+	
+	
+	pub fn load_sprites_pathbuf(path_buf: PathBuf) -> Array<Gd<BinSprite>> {
 		if !path_buf.exists() {
 			godot_print!("Could not find sprite directory!");
-			return Default::default();
+			return array![];
 		}
 		
 		let mut file_vector: Vec<PathBuf> = Vec::new();
@@ -57,7 +61,7 @@ impl SpriteLoadSave {
 				}
 			},
 			
-			_ => return Default::default(),
+			_ => return array![],
 		}
 		
 		file_vector.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));

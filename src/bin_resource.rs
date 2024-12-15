@@ -196,7 +196,6 @@ impl BinResource {
 		
 		object_dictionary.set("sprites", sprite_array);
 		
-		
 		// Load cells (if present)
 		let cell_path: PathBuf = Path::new(&path_buf).join("cells");
 		let mut cell_array: Array<Gd<Cell>> = Array::new();
@@ -367,7 +366,7 @@ impl BinResource {
 					]);
 					
 					let select_pixels = PackedByteArray::from(
-						object_bin_data[last_pointer + 0x08..last_pointer + (select_w * select_h) as usize].to_vec());
+						object_bin_data[last_pointer + 0x08..last_pointer + 0x08 + (select_w * select_h) as usize].to_vec());
 					
 					dictionary = dict! {
 						"type": "sprite_list_select",
@@ -738,8 +737,13 @@ impl BinResource {
 	
 	#[func] pub fn save_resource_directory(session: Dictionary, path: String) {
 		if !PathBuf::from(&path).exists() {
-			godot_print!("Path does not exist!");
-			return;
+			match fs::create_dir_all(&path) {
+				Ok(_result) => (),
+				_ => {
+					godot_print!("Path does not exist and could not be created!");
+					return;
+				}
+			}
 		}
 		
 		let dictionary: Dictionary = session.at("data").to();
@@ -802,8 +806,15 @@ impl BinResource {
 		let _ = path_buf.pop();
 		let _ = path_buf.push("palettes");
 		
+		if !path_buf.exists() {
+			fs::create_dir_all(format!("{}/../palettes", path)).unwrap();
+		}
+		
+		godot_print!("{:?}", path_buf);
+		
 		for palette_number in 0..palette_array.len() {
 			let this_path_buf: PathBuf = path_buf.join(format!("pal_{}.bin", palette_number));
+			godot_print!("{:?}", this_path_buf);
 			let item = palette_array.at(palette_number);
 			let palette = item.bind();
 			

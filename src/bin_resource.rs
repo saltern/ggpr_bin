@@ -101,6 +101,12 @@ impl BinResource {
 		let mut sprite_list: bool = true;
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
 		
+		if objects.len() == 0 {
+			return dict! {
+				"error": "Invalid file (no objects)"
+			}
+		}
+		
 		for object in 0..objects.len() {
 			match identify_object(&objects[object]) {
 				ObjectType::Sprite => continue,
@@ -112,12 +118,14 @@ impl BinResource {
 			}
 		}
 		
+		
 		if sprite_list {
 			godot_print!("Loading SpriteListFile");
 			return Self::load_sprite_list_file(bin_data);
 		}
 		
 		else {
+			godot_print!("Loading generic resource");
 			return Self::load_resource_file(bin_data);
 		}
 	}
@@ -294,6 +302,10 @@ impl BinResource {
 		let mut objects: Vec<Vec<u8>> = Vec::new();
 		
 		for pointer in 0..header_pointers.len() {
+			if header_pointers[pointer] >= bin_data.len() {
+				return objects;
+			}
+			
 			if pointer == header_pointers.len() - 1 {
 				objects.push(bin_data[header_pointers[pointer]..].to_vec());
 			}
@@ -491,7 +503,7 @@ impl BinResource {
 		}
 		
 		return dict! {
-			1u32: dict! {
+			0u32: dict! {
 				"type": "sprite_list_file",
 				"sprites": sprites,
 			}

@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::io::BufWriter;
+use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::ops::Deref;
@@ -703,5 +704,18 @@ impl SpriteExporter {
 			
 			name_index += 1;
 		}
+	}
+
+
+	#[func]
+	fn export_png_direct(
+		path: String, sprite: Gd<BinSprite>, palette: PackedByteArray
+	) {
+		let path_buf: PathBuf = PathBuf::from(path);
+		let mut directory: PathBuf = path_buf.clone();
+		let _ = directory.pop();
+		let _ = fs::create_dir_all(&directory);
+		
+		Self::make_png(path_buf, &sprite.bind(), false, palette.to_vec(), 3, true, false);
 	}
 }

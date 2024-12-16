@@ -676,8 +676,6 @@ impl BinResource {
 		let mut data_vector: Vec<u8> = Vec::new();
 		let mut header_pointers: Vec<u32> = Vec::new();
 		
-		godot_print!("We saving'!");
-		
 		for (_object_number, object_dict) in dictionary.iter_shared().typed::<i64, Dictionary>() {
 			header_pointers.push(data_vector.len() as u32);
 			
@@ -810,15 +808,15 @@ impl BinResource {
 			fs::create_dir_all(format!("{}/../palettes", path)).unwrap();
 		}
 		
-		godot_print!("{:?}", path_buf);
+		// godot_print!("{:?}", path_buf);
 		
 		for palette_number in 0..palette_array.len() {
-			let this_path_buf: PathBuf = path_buf.join(format!("pal_{}.bin", palette_number));
-			godot_print!("{:?}", this_path_buf);
+			// let this_path_buf: PathBuf = path_buf.join(format!("pal_{}.bin", palette_number));
+			// godot_print!("{:?}", this_path_buf);
 			let item = palette_array.at(palette_number);
 			let palette = item.bind();
 			
-			palette.to_bin_file(this_path_buf);
+			palette.to_bin_file(format!("{path}/../palettes/pal_{palette_number}.bin"));
 		}
 	}
 	

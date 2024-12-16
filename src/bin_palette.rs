@@ -254,7 +254,13 @@ impl BinPalette {
 	
 	
 	/// Saves the palette to a .bin file.
-	pub fn to_bin_file(&self, path_buf: PathBuf) {
+	#[func]
+	pub fn to_bin_file(&self, path: String) {
+		let path_buf: PathBuf = PathBuf::from(path);
+		let mut dir_buf: PathBuf = path_buf.clone();
+		let _ = dir_buf.pop();
+		let _ = fs::create_dir_all(dir_buf);
+		
 		match File::create(&path_buf) {
 			Ok(file) => {
 				let ref mut buffer = BufWriter::new(file);

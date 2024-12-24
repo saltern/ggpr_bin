@@ -116,7 +116,7 @@ pub struct BinSprite {
 impl IResource for BinSprite {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 			pixels: PackedByteArray::from(vec![]),
 			image: None,
 			texture: None,
@@ -134,12 +134,12 @@ impl BinSprite {
 	pub fn new_from_data(pixels: PackedByteArray, image: Gd<Image>, bit_depth: u16, palette: PackedByteArray) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
 			Self {
-				base: base,
-				pixels: pixels,
+				base,
+				pixels,
 				texture: ImageTexture::create_from_image(&image),
 				image: Some(image),
-				bit_depth: bit_depth,
-				palette: palette,
+				bit_depth,
+				palette,
 			}
 		});
 	}
@@ -151,8 +151,8 @@ impl BinSprite {
 		let height: u16 = image.get_height() as u16;
 	
 		let sprite_data: SpriteData = SpriteData {
-			width: width,
-			height: height,
+			width,
+			height,
 			bit_depth: self.bit_depth,
 			pixels: self.pixels.to_vec(),
 			palette: self.palette.to_vec(),

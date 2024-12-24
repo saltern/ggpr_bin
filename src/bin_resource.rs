@@ -46,7 +46,7 @@ struct BinResource {
 impl IResource for BinResource {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 		}
 	}
 }
@@ -531,10 +531,10 @@ impl BinResource {
 		
 		return Scriptable {
 			name: name.into(),
-			cells: cells,
-			sprites: sprites,
-			scripts: scripts,
-			palettes: palettes,
+			cells,
+			sprites,
+			scripts,
+			palettes,
 		};
 	}
 	
@@ -672,7 +672,7 @@ impl BinResource {
 	
 	
 	#[func] pub fn save_resource_file(dictionary: Dictionary, path: String) {
-		if true {
+		{
 			let mut path_check: PathBuf = PathBuf::from(&path);
 			let _ = path_check.pop();
 			

@@ -11,8 +11,10 @@ pub struct InstructionArgument {
 	#[export] pub display_name: GString,
 	/// Size of this argument. Possible values: 1, 2.
 	#[export] pub size: u8,
-	/// Value of this argument. 8 or 16 bits.
-	#[export] pub value: u16,
+	/// Value of this argument. 8, 16, or 32 bits.
+	#[export] pub value: i64,
+	/// Whether the value should be signed or not.
+	#[export] pub signed: bool,
 }
 
 
@@ -69,6 +71,7 @@ pub struct BinScript {
 			display_name: Default::default(),
 			size: 1,
 			value: 0,
+			signed: false,
 		}
 	}
 }

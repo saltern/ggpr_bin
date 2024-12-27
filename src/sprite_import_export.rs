@@ -30,7 +30,7 @@ struct SpriteImporter {
 impl IResource for SpriteImporter{
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 		}
 	}
 }
@@ -226,7 +226,7 @@ struct SpriteExporter {
 impl IResource for SpriteExporter {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 		}
 	}
 }
@@ -291,7 +291,7 @@ impl SpriteExporter {
 			}
 		}
 		
-		let pixel_vector: Vec<u8>;
+		let mut pixel_vector: Vec<u8>;
 		if reindex {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
 		}
@@ -299,7 +299,11 @@ impl SpriteExporter {
 		else {
 			pixel_vector = sprite.pixels.to_vec();
 		}
-		
+
+		if sprite.bit_depth == 4 {
+			pixel_vector = sprite_transform::bpp_to_4(pixel_vector, true);
+		}
+
 		let image: Gd<Image> = sprite.image.clone().unwrap();
 		let width = image.get_width() as u16;
 		let height = image.get_height() as u16;

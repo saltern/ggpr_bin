@@ -38,7 +38,7 @@ pub struct Instruction {
 pub struct ScriptAction {
 	base: Base<Resource>,
 	/// Header: flags. 4 bytes.
-	#[export] pub flag: u32,
+	#[export] pub flags: u32,
 	/// Header: lvflag. 2 bytes.
 	#[export] pub lvflag: u16,
 	/// Header: damage. 1 byte.
@@ -93,7 +93,7 @@ pub struct BinScript {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
 			base,
-			flag: 0,
+			flags: 0,
 			lvflag: 0,
 			damage: 0,
 			flag2: 0,
@@ -168,7 +168,7 @@ pub struct BinScript {
 	pub fn to_bin(&self) -> Vec<u8> {
 		let mut bin_data: Vec<u8> = Vec::new();
 		
-		bin_data.extend(self.flag.to_le_bytes());
+		bin_data.extend(self.flags.to_le_bytes());
 		bin_data.extend(self.lvflag.to_le_bytes());
 		bin_data.push(self.damage);
 		bin_data.push(self.flag2);

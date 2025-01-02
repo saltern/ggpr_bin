@@ -177,7 +177,7 @@ pub fn decompress(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	
 	// Get byte data
 	let mut byte_data: Vec<u8> = Vec::with_capacity(bin_data.len() - pointer);
-	while pointer < bin_data.len() {
+	while pointer + 1 < bin_data.len() {
 		byte_data.push(bin_data[pointer + 1]);
 		byte_data.push(bin_data[pointer]);
 		pointer += 2;
@@ -225,12 +225,12 @@ pub fn decompress(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	}
 	
 	pixel_vector.resize(header.width as usize * header.height as usize, 0u8);
-	
+
 	return SpriteData {
 		width: header.width,
 		height: header.height,
 		bit_depth: header.bit_depth,
 		pixels: pixel_vector,
-		palette: palette,
+		palette,
 	};
 }

@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::io::BufWriter;
 use std::fs;
+use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -120,12 +121,8 @@ impl BinResource {
 		
 		
 		if sprite_list {
-			godot_print!("Loading SpriteListFile");
 			return Self::load_sprite_list_file(bin_data);
-		}
-		
-		else {
-			godot_print!("Loading generic resource");
+		} else {
 			return Self::load_resource_file(bin_data);
 		}
 	}
@@ -210,21 +207,7 @@ impl BinResource {
 		let mut cell_array_len: usize = 0usize;
 		
 		if cell_path.exists() {
-			let mut cell_file_vector: Vec<PathBuf> = Vec::new();
-			
-			match fs::read_dir(cell_path) {
-				Ok(value) => {
-					for entry in value {
-						cell_file_vector.push(entry.unwrap().path());
-					}
-				},
-				
-				_ => (),
-			}
-			
-			cell_file_vector.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
-			
-			for item in cell_file_vector {
+			for item in Self::get_file_vector(cell_path) {
 				match Cell::from_file(item) {
 					Some(cell) => cell_array.push(&cell),
 					_ => (),
@@ -244,7 +227,17 @@ impl BinResource {
 		
 		if cell_array_len > 0 {
 			object_dictionary.set("type", "scriptable");
-		
+
+			// Load script (if present)
+			{
+				let script_path: PathBuf = Path::new(&path_buf).join("script.bin");
+
+				if script_path.exists() {
+					let script = PackedByteArray::from(fs::read(script_path).unwrap());
+					object_dictionary.set("scripts", script);
+				}
+			}
+
 			// Don't load palettes if not player
 			if object_name != "player" {
 				return Some(object_dictionary);
@@ -256,22 +249,9 @@ impl BinResource {
 			palette_path.push("palettes");
 			
 			if palette_path.exists() {
-				let mut palette_file_vector: Vec<PathBuf> = Vec::new();
-				
-				match fs::read_dir(palette_path) {
-					Ok(value) => {
-						for entry in value {
-							palette_file_vector.push(entry.unwrap().path());
-						}
-					},
-					
-					_ => (),
-				}
-				
-				palette_file_vector.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
 				let mut palette_array: Array<Gd<BinPalette>> = Array::new();
 				
-				for item in palette_file_vector {
+				for item in Self::get_file_vector(palette_path) {
 					match BinPalette::from_bin_file_pathbuf(item) {
 						Some(palette) => palette_array.push(&palette),
 						_ => (),
@@ -295,7 +275,33 @@ impl BinResource {
 	// =================================================================================
 	// LOADING
 	// =================================================================================
-	
+
+
+	fn get_file_vector(&path_buf: PathBuf) -> Vec<PathBuf> {
+		if path_buf.exists() {
+			let mut return_vector: Vec<PathBuf> = Vec::new();
+
+			match fs::read_dir(path_buf) {
+				Ok(value) => {
+					for entry in value {
+						return_vector.push(entry.unwrap().path());
+					}
+
+					// Natural sort
+					return_vector.sort_by(
+						|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap())
+					);
+
+					return return_vector;
+				},
+
+				_ => (),
+			}
+		}
+
+		return Vec::new();
+	}
+
 	
 	fn get_objects(bin_data: &Vec<u8>) -> Vec<Vec<u8>> {
 		let header_pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
@@ -432,8 +438,6 @@ impl BinResource {
 						"scripts": scriptable.scripts,
 					};
 					
-					println!("Built scriptable dictionary");
-					
 					if scriptable.palettes.len() > 0 {
 						dictionary.set("palettes", scriptable.palettes);
 					}
@@ -473,10 +477,10 @@ impl BinResource {
 					};
 				},
 			}
-			
+
 			resource_dictionary.set(object as u32, dictionary);
 		}
-		
+
 		return resource_dictionary;
 	}
 	
@@ -683,7 +687,7 @@ impl BinResource {
 		}
 		
 		let path_buf: PathBuf = PathBuf::from(path);
-		
+
 		let mut file_vector: Vec<u8> = Vec::new();
 		let mut data_vector: Vec<u8> = Vec::new();
 		let mut header_pointers: Vec<u32> = Vec::new();
@@ -774,6 +778,11 @@ impl BinResource {
 				let cell_array: Array<Gd<Cell>> = object_dict.at("cells").to();
 				Self::save_cells_to_path(cell_array, &object_path);
 			}
+
+			if object_dict.contains_key("scripts") {
+				let scripts: PackedByteArray = object_dict.at("scripts").to();
+				Self::save_script_to_path(scripts.to_vec(), &object_path);
+			}
 			
 			if object_dict.contains_key("palettes") {
 				let palette_array: Array<Gd<BinPalette>> = object_dict.at("palettes").to();
@@ -810,7 +819,13 @@ impl BinResource {
 		let _ = fs::rename(format!("{}/sprites_1", path), format!("{}/sprites", path));
 	}
 	
-	
+
+	fn save_script_to_path(scripts: Vec<u8>, path: &String) {
+		let mut script_file = File::create(format!("{}/script.bin", path)).unwrap();
+		script_file.write_all(scripts.as_slice()).unwrap();
+	}
+
+
 	fn save_palettes_to_path(palette_array: Array<Gd<BinPalette>>, path: &String) {
 		let mut path_buf: PathBuf = PathBuf::from(path);
 		let _ = path_buf.pop();
@@ -820,11 +835,7 @@ impl BinResource {
 			fs::create_dir_all(format!("{}/../palettes", path)).unwrap();
 		}
 		
-		// godot_print!("{:?}", path_buf);
-		
 		for palette_number in 0..palette_array.len() {
-			// let this_path_buf: PathBuf = path_buf.join(format!("pal_{}.bin", palette_number));
-			// godot_print!("{:?}", this_path_buf);
 			let item = palette_array.at(palette_number);
 			let palette = item.bind();
 			

@@ -110,7 +110,7 @@ impl SpriteLoadSave {
 				sprite_data = data;
 			}
 		}
-		
+
 		let sprite_image = Image::create_from_data(
 			// Dimensions
 			sprite_data.width as i32,

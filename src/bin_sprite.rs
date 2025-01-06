@@ -188,10 +188,10 @@ impl BinSprite {
 		bin_data.extend(header);
 		bin_data.extend(self.palette.to_vec());
 		bin_data.extend_from_slice(&[
-			(iterations_u32 >> 16) as u8,
-			(iterations_u32 >> 24) as u8,
-			 iterations_u32 as u8,
-			(iterations_u32 >> 08) as u8,
+			(iterations_u32 >> 16) as u8,	// BB
+			(iterations_u32 >> 24) as u8,	// AA
+			(iterations_u32 >> 00) as u8,	// DD
+			(iterations_u32 >> 08) as u8,	// CC
 		]);
 		
 		for byte in 0..compressed_data.stream.len() / 2 {

@@ -150,9 +150,9 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 		SpriteData {
 			width: reader.info().width as u16,
 			height: reader.info().height as u16,
-			bit_depth: bit_depth,
+			bit_depth,
 			pixels: pixel_vector,
-			palette: palette,
+			palette,
 		}
 	);
 }
@@ -273,8 +273,8 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 				width: header.width,
 				height: header.height,
 				bit_depth: header.bit_depth,
-				pixels: pixels,
-				palette: palette,
+				pixels,
+				palette,
 			}
 		);
 	}
@@ -417,7 +417,7 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 			height: height as u16,
 			bit_depth: bit_depth as u16,
 			pixels: pixel_vector,
-			palette: palette,
+			palette,
 		}
 	);
 }

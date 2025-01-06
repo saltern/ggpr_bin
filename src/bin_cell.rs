@@ -63,7 +63,7 @@ pub struct BoxInfo {
 impl IResource for BoxInfo {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 			x_offset: 0,
 			y_offset: 0,
 			width: 0,
@@ -100,7 +100,7 @@ pub struct Cell {
 impl IResource for Cell {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 			boxes: Array::new(),
 			sprite_x_offset: 0,
 			sprite_y_offset: 0,
@@ -206,7 +206,7 @@ impl Cell {
 		let cell: Gd<Self> = Gd::from_init_fn(
 			|base| {
 				Self {
-					base: base,
+					base,
 					boxes: hitbox_array,
 					sprite_x_offset: cell_json.sprite_info.x_offset,
 					sprite_y_offset: cell_json.sprite_info.y_offset,
@@ -269,7 +269,7 @@ impl Cell {
 		let cursor: usize = (hitbox_count as usize) * 0x0C + 0x04;
 		return Some(Gd::from_init_fn(|base| {
 		Cell {
-				base: base,
+				base,
 				boxes: hitbox_array,
 				sprite_x_offset: i16::from_le_bytes([
 					bin_data[cursor + 0x00], bin_data[cursor + 0x01]
@@ -319,8 +319,8 @@ impl Cell {
 		};
 		
 		let cell_json = CellJSON {
-			boxes: boxes,
-			sprite_info: sprite_info,
+			boxes,
+			sprite_info,
 		};
 		
 		return serde_json::to_string_pretty(&cell_json).unwrap();

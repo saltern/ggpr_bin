@@ -3,7 +3,6 @@ use std::io::BufWriter;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
-use std::ops::Deref;
 
 use godot::prelude::*;
 use godot::classes::Image;
@@ -15,7 +14,6 @@ use crate::sprite_compress;
 
 use bin_sprite::BinSprite;
 use sprite_compress::SpriteData;
-use sprite_compress::CompressedData;
 
 
 #[derive(GodotClass)]
@@ -29,9 +27,7 @@ pub struct SpriteLoadSave {
 #[godot_api]
 impl IResource for SpriteLoadSave {
 	fn init(base: Base<Resource>) -> Self {
-		Self {
-			base: base,
-		}
+		Self { base }
 	}
 }
 
@@ -49,6 +45,7 @@ impl SpriteLoadSave {
 	pub fn load_sprites_pathbuf(path_buf: PathBuf) -> Array<Gd<BinSprite>> {
 		if !path_buf.exists() {
 			godot_print!("Could not find sprite directory!");
+			godot_print!("Provided path: {}", path_buf.display());
 			return array![];
 		}
 		
@@ -141,8 +138,7 @@ impl SpriteLoadSave {
 	/// Saves BIN sprites to a specified path. Overwrites existing files.
 	#[func]
 	pub fn save_sprites(sprites: Array<Gd<BinSprite>>, target_path: String) {
-		let path_str: String = String::from(target_path);
-		let path_buf: PathBuf = PathBuf::from(path_str);
+		let path_buf: PathBuf = PathBuf::from(target_path);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find sprite directory!");
@@ -162,7 +158,9 @@ impl SpriteLoadSave {
 				Ok(file) => bin_file = file,
 				_ => {
 					sprite_number += 1;
-					godot_print!("sprite_load_save::save_sprites() error: Could not create target file!");
+					godot_print!(
+						"sprite_load_save::save_sprites() error: Could not create target file!"
+					);
 					godot_print!("\tFile: '{:?}'", &target_file);
 					continue;
 				}
@@ -174,78 +172,7 @@ impl SpriteLoadSave {
 			
 			// Get data
 			let binding = gd_sprite.bind();
-			let sprite: &BinSprite = binding.deref();
-			
-			let image: &Image = sprite.image.as_ref().unwrap();
-			let tex_width: u16 = image.get_width() as u16;
-			let tex_height: u16 = image.get_height() as u16;
-			
-			let pixels: Vec<u8> = sprite.pixels.to_vec();
-			let palette: Vec<u8> = sprite.palette.to_vec();
-			
-			let sprite_data: SpriteData = SpriteData {
-				width: tex_width,
-				height: tex_height,
-				bit_depth: sprite.bit_depth,
-				pixels: pixels,
-				palette: palette,
-			};
-			
-			let clut: u16;
-			if sprite_data.palette.is_empty() { clut = 0x0000; } else { clut = 0x0020; }
-			let palette_clone: Vec<u8> = sprite_data.palette.clone();
-			let palette_slice: &[u8] = palette_clone.as_slice();
-			
-			// Compress
-			let compressed_data: CompressedData = sprite_compress::compress(sprite_data);
-	
-			// Generate hash
-			let mut hash: u16 = 0;
-			
-			for byte in 0..compressed_data.stream.len() / 2 {
-				hash = hash ^ (compressed_data.stream[byte] as u16 | (compressed_data.stream[byte + 1] as u16) << 8);
-			}
-			
-			// Get bytes
-			let header_bytes: Vec<u8> = bin_sprite::make_header(
-				true,				// compressed
-				clut,				// embedded palette yes/no
-				sprite.bit_depth,	// bit depth
-				tex_width,			// sprite width
-				tex_height,			// sprite height
-				0x0000,				// tw
-				0x0000,				// th
-				hash				// hash
-			);
-			
-			// Write header
-			let _ = buffer.write_all(&header_bytes);
-			
-			// Write palette
-			let _ = buffer.write_all(palette_slice);
-			
-			// Write iterations
-			let iterations_u32: u32 = compressed_data.iterations as u32;
-			let _ = buffer.write_all(&[
-				(iterations_u32 >> 16) as u8,	// BB
-				(iterations_u32 >> 24) as u8,	// AA
-				(iterations_u32 >> 00) as u8,	// DD
-				(iterations_u32 >> 08) as u8,	// CC
-			]);
-			
-			// Write sprite data (LE 16 bit)
-			let mut byte: usize = 0;
-			let length: usize = compressed_data.stream.len();
-			
-			while byte + 1 < length {
-				let _ = buffer.write_all(&[
-					compressed_data.stream[byte + 1],
-					compressed_data.stream[byte + 0],
-				]);
-				
-				byte += 2;
-			}
-			
+			buffer.write_all(binding.to_bin().as_slice()).unwrap();
 			let _ = buffer.flush();
 			
 			sprite_number += 1;

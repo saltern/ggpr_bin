@@ -59,7 +59,7 @@ impl BinResource {
 	#[func] fn from_file(source_path: String) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
-		godot_print!("Loading {}...", &source_path);
+		//godot_print!("Loading {}...", &source_path);
 		
 		if !path_buf.exists() {
 			godot_print!("File was not found");
@@ -189,7 +189,16 @@ impl BinResource {
 	
 	fn load_object_directory(path_buf: PathBuf) -> Option<Dictionary> {
 		let mut object_dictionary: Dictionary = Dictionary::new();
-		
+
+		// Check if palettes folder...
+		match path_buf.file_name() {
+			Some(file_name) => if file_name.to_str() == Some("palettes") {
+				return None;
+			},
+
+			_ => return None,
+		}
+
 		// Load sprites
 		let sprite_path: PathBuf = Path::new(&path_buf).join("sprites");
 		let sprite_array: Array<Gd<BinSprite>> = SpriteLoadSave::load_sprites_pathbuf(sprite_path);
@@ -675,7 +684,9 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	#[func] pub fn save_resource_file(dictionary: Dictionary, path: String) {
+	#[func] pub fn save_resource_file(
+		dictionary: Dictionary, path: String, mut global_signals: Gd<Node>
+	) {
 		{
 			let mut path_check: PathBuf = PathBuf::from(&path);
 			let _ = path_check.pop();
@@ -685,7 +696,8 @@ impl BinResource {
 				return;
 			}
 		}
-		
+
+		let reference: &mut Gd<Node> = &mut global_signals;
 		let path_buf: PathBuf = PathBuf::from(path);
 
 		let mut file_vector: Vec<u8> = Vec::new();
@@ -696,36 +708,104 @@ impl BinResource {
 			header_pointers.push(data_vector.len() as u32);
 			
 			let this_type: String = object_dict.get("type").unwrap().to_string();
-			
+
 			match &this_type as &str {
 				"sprite_list_file" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("SpriteList"),
+					]);
+
 					let sprite_array: Array<Gd<BinSprite>> = object_dict.at("sprites").to();
-					let sprite_block: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(sprite_array, 0x00);
+					let sprite_block: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(
+						sprite_array, 0x00, reference
+					);
 					
 					header_pointers = sprite_block.0;
 					data_vector.extend(sprite_block.1);
 					break;
 				}
 				
-				"sprite" =>
-					data_vector.extend(Self::get_bin_sprite(object_dict)),
+				"sprite" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("Sprite"),
+					]);
+
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_sub_object"),
+						Variant::from("Single sprite"),
+					]);
+
+					data_vector.extend(Self::get_bin_sprite(object_dict));
+				}
 					
-				"sprite_list" =>
-					data_vector.extend(Self::get_bin_sprite_list(object_dict)),
+				"sprite_list" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("SpriteList"),
+					]);
+
+					data_vector.extend(Self::get_bin_sprite_list(object_dict, reference));
+				}
 					
-				"sprite_list_select" =>
-					data_vector.extend(Self::get_bin_sprite_list_select(object_dict)),
+				"sprite_list_select" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("SpriteListSelect"),
+					]);
+
+					data_vector.extend(Self::get_bin_sprite_list_select(
+						object_dict, reference
+					));
+				}
 					
-				"jpf_plain_text" =>
-					data_vector.extend(Self::get_bin_jpf_plain_text(object_dict)),
+				"jpf_plain_text" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("JPFPlainText"),
+					]);
+
+					data_vector.extend(Self::get_bin_jpf_plain_text(object_dict, reference));
+				}
 					
-				"scriptable" =>
-					data_vector.extend(Self::get_bin_scriptable(object_dict)),
+				"scriptable" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("Scriptable"),
+					]);
+
+					data_vector.extend(Self::get_bin_scriptable(object_dict, reference));
+				}
 					
-				"multi_scriptable" =>
-					data_vector.extend(Self::get_bin_multi_scriptable(object_dict)),
+				"multi_scriptable" => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("MultiScriptable"),
+					]);
+
+					data_vector.extend(Self::get_bin_multi_scriptable(object_dict, reference));
+				}
 					
 				_ => {
+					// Report
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_object"),
+						Variant::from("Unsupported"),
+					]);
+
+					reference.call_deferred("emit_signal", &[
+						Variant::from("save_sub_object"),
+						Variant::from("Raw bytes"),
+					]);
+
 					let data_array: PackedByteArray = object_dict.at("data").to();
 					data_vector.extend(data_array.to_vec());
 				}
@@ -735,7 +815,7 @@ impl BinResource {
 		file_vector.extend(Self::finalize_pointers(header_pointers));
 		file_vector.extend(data_vector);
 		
-		godot_print!("Writing to {:?}", path_buf);
+		//godot_print!("Writing to {:?}", path_buf);
 		
 		match fs::File::create(path_buf) {
 			Ok(file) => {
@@ -749,7 +829,9 @@ impl BinResource {
 	}
 	
 	
-	#[func] pub fn save_resource_directory(session: Dictionary, path: String) {
+	#[func] pub fn save_resource_directory(
+		session: Dictionary, path: String, mut global_signals: Gd<Node>
+	) {
 		if !PathBuf::from(&path).exists() {
 			match fs::create_dir_all(&path) {
 				Ok(_result) => (),
@@ -759,7 +841,8 @@ impl BinResource {
 				}
 			}
 		}
-		
+
+		let reference: &mut Gd<Node> = &mut global_signals;
 		let dictionary: Dictionary = session.at("data").to();
 		
 		for object in 0..dictionary.len() {
@@ -770,32 +853,68 @@ impl BinResource {
 			object_path.push_str(&push);
 			
 			if object_dict.contains_key("sprites") {
+				// Report
+				reference.call_deferred("emit_signal", &[
+					Variant::from("save_object"),
+					Variant::from("Sprites"),
+				]);
+
 				let sprite_array: Array<Gd<BinSprite>> = object_dict.at("sprites").to();
-				Self::save_sprites_to_path(sprite_array, &object_path);
+				Self::save_sprites_to_path(sprite_array, &object_path, reference);
 			}
 			
 			if object_dict.contains_key("cells") {
+				// Report
+				reference.call_deferred("emit_signal", &[
+					Variant::from("save_object"),
+					Variant::from("Cells"),
+				]);
+
 				let cell_array: Array<Gd<Cell>> = object_dict.at("cells").to();
-				Self::save_cells_to_path(cell_array, &object_path);
+				Self::save_cells_to_path(cell_array, &object_path, reference);
 			}
 
 			if object_dict.contains_key("scripts") {
+				// Report
+				reference.call_deferred("emit_signal", &[
+					Variant::from("save_object"),
+					Variant::from("Scripts"),
+				]);
+
+				reference.call_deferred("emit_signal", &[
+					Variant::from("save_sub_object"),
+					Variant::from("Raw bytes"),
+				]);
+
 				let scripts: PackedByteArray = object_dict.at("scripts").to();
 				Self::save_script_to_path(scripts.to_vec(), &object_path);
 			}
 			
 			if object_dict.contains_key("palettes") {
+				// Report
+				reference.call_deferred("emit_signal", &[
+					Variant::from("save_object"),
+					Variant::from("Scripts"),
+				]);
+
 				let palette_array: Array<Gd<BinPalette>> = object_dict.at("palettes").to();
-				Self::save_palettes_to_path(palette_array, &object_path);
+				Self::save_palettes_to_path(palette_array, &object_path, reference);
 			}
 		}
 	}
 	
 	
-	fn save_cells_to_path(cell_array: Array<Gd<Cell>>, path: &String) {
+	fn save_cells_to_path(
+		cell_array: Array<Gd<Cell>>, path: &String, global_signals: &mut Gd<Node>
+	) {
 		fs::create_dir_all(format!("{}/cells_0", path)).unwrap();
 		
 		for cell_number in 0..cell_array.len() {
+			global_signals.call_deferred("emit_signal", &[
+				Variant::from("save_sub_object"),
+				Variant::from(format!("Cell # {}", cell_number)),
+			]);
+
 			let item = cell_array.at(cell_number);
 			let cell = item.bind();
 			cell.to_file(PathBuf::from(format!("{}/cells_0/cell_{}.json", path, cell_number)));
@@ -808,10 +927,57 @@ impl BinResource {
 	}
 	
 	
-	fn save_sprites_to_path(sprite_array: Array<Gd<BinSprite>>, path: &String) {
-		fs::create_dir_all(format!("{}/sprites_0", path)).unwrap();
+	fn save_sprites_to_path(
+		sprite_array: Array<Gd<BinSprite>>, path: &String, global_signals: &mut Gd<Node>
+	) {
+		let sprites_0_path: String = format!("{}/sprites_0", path);
+
+		match fs::create_dir_all(&sprites_0_path) {
+			Ok(_result) => (),
+			_ => {
+				godot_print!(
+					"bin_resource::save_sprites_to_path(): Path does not exist and could not be created!"
+				);
+				return;
+			},
+		};
 		
-		SpriteLoadSave::save_sprites(sprite_array, format!("{}/sprites_0", path));
+		// SpriteLoadSave::save_sprites(sprite_array, format!("{}/sprites_0", path));
+
+		let path_buf: PathBuf = PathBuf::from(sprites_0_path);
+		let mut sprite_number: usize = 0;
+
+		for gd_sprite in sprite_array.iter_shared() {
+			global_signals.call_deferred("emit_signal", &[
+				Variant::from("save_sub_object"),
+				Variant::from(format!("Sprite # {}", sprite_number)),
+			]);
+
+			// Create file
+			let mut target_file: PathBuf = path_buf.clone();
+			target_file.push(format!("sprite_{}.bin", sprite_number));
+
+			match File::create(&target_file) {
+				Ok(mut file) => {
+					let sprite = gd_sprite.bind();
+					match file.write(sprite.to_bin().as_slice()) {
+						Ok(_t) => (),
+						_ => godot_print!(
+							"bin_resource::save_sprites_to_path(): Failed to write sprite_{}.bin!",
+							sprite_number
+						),
+					}
+				},
+				_ => {
+					godot_print!(
+						"bin_resource::save_sprites_to_path(): Could not create sprite_{}.bin!",
+						sprite_number
+					);
+				}
+			}
+
+			sprite_number += 1;
+		}
 		
 		// Replace old files with new
 		let _ = fs::rename(format!("{}/sprites_0", path), format!("{}/sprites_1", path));
@@ -826,7 +992,9 @@ impl BinResource {
 	}
 
 
-	fn save_palettes_to_path(palette_array: Array<Gd<BinPalette>>, path: &String) {
+	fn save_palettes_to_path(
+		palette_array: Array<Gd<BinPalette>>, path: &String, global_signals: &mut Gd<Node>
+	) {
 		let mut path_buf: PathBuf = PathBuf::from(path);
 		let _ = path_buf.pop();
 		let _ = path_buf.push("palettes");
@@ -836,6 +1004,12 @@ impl BinResource {
 		}
 		
 		for palette_number in 0..palette_array.len() {
+			// Report
+			global_signals.call_deferred("emit_signal", &[
+				Variant::from("save_sub_object"),
+				Variant::from(format!("Palette # {}", palette_number)),
+			]);
+
 			let item = palette_array.at(palette_number);
 			let palette = item.bind();
 			
@@ -875,11 +1049,20 @@ impl BinResource {
 	
 	
 	// Returns (non-finalized) pointer vector and sprite vector
-	fn get_sprite_block(sprite_array: Array<Gd<BinSprite>>, offset: u32) -> (Vec<u32>, Vec<u8>) {
+	fn get_sprite_block(
+		sprite_array: Array<Gd<BinSprite>>, offset: u32, global_signals: &mut Gd<Node>
+	) -> (Vec<u32>, Vec<u8>) {
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut sprite_vector: Vec<u8> = Vec::new();
 		
 		for item in 0..sprite_array.len() {
+			global_signals.call_deferred(
+				"emit_signal", &[
+					Variant::from("save_sub_object"),
+					Variant::from(format!("Sprite # {}", item)),
+				]
+			);
+
 			pointer_vector.push(sprite_vector.len() as u32 + offset);
 			let sprite: Gd<BinSprite> = sprite_array.at(item);
 			sprite_vector.extend(sprite.bind().to_bin());
@@ -889,11 +1072,20 @@ impl BinResource {
 	}
 	
 	
-	fn get_cell_block(cell_array: Array<Gd<Cell>>) -> (Vec<u32>, Vec<u8>) {
+	fn get_cell_block(
+		cell_array: Array<Gd<Cell>>, global_signals: &mut Gd<Node>
+	) -> (Vec<u32>, Vec<u8>) {
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut cell_vector: Vec<u8> = Vec::new();
 		
 		for item in 0..cell_array.len() {
+			global_signals.call_deferred(
+				"emit_signal", &[
+					Variant::from("save_sub_object"),
+					Variant::from(format!("Cell # {}", item)),
+				]
+			);
+
 			pointer_vector.push(cell_vector.len() as u32);
 			let cell: Gd<Cell> = cell_array.at(item);
 			cell_vector.extend(cell.bind().to_bin());
@@ -903,11 +1095,20 @@ impl BinResource {
 	}
 	
 	
-	fn get_palette_block(palette_array: Array<Gd<BinPalette>>) -> (Vec<u32>, Vec<u8>) {
+	fn get_palette_block(
+		palette_array: Array<Gd<BinPalette>>, global_signals: &mut Gd<Node>
+	) -> (Vec<u32>, Vec<u8>) {
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut palette_vector: Vec<u8> = Vec::new();
 		
 		for item in 0..palette_array.len() {
+			global_signals.call_deferred(
+				"emit_signal", &[
+					Variant::from("save_sub_object"),
+					Variant::from(format!("Palette # {}", item)),
+				]
+			);
+
 			pointer_vector.push(palette_vector.len() as u32);
 			let palette: Gd<BinPalette> = palette_array.at(item);
 			palette_vector.extend(palette.bind().to_bin());
@@ -927,12 +1128,14 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_sprite_list(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_sprite_list(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		
 		let header_pointers: Vec<u32>;
 		let data_vector: Vec<u8>;
-		(header_pointers, data_vector) = Self::get_sprite_block(sprite_array, 0x00);
+		(header_pointers, data_vector) = Self::get_sprite_block(
+			sprite_array, 0x00, global_signals
+		);
 		
 		// Write
 		let mut object_vector: Vec<u8> = Self::finalize_pointers(header_pointers);
@@ -942,7 +1145,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_sprite_list_select(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_sprite_list_select(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "sprite_list_select"
 		 * "sprites": Array<Gd<BinSprite>>
@@ -963,7 +1166,9 @@ impl BinResource {
 		
 		let mut header_pointers: Vec<u32>;
 		let mut data_vector: Vec<u8>;
-		(header_pointers, data_vector) = Self::get_sprite_block(sprite_array, 0x00);
+		(header_pointers, data_vector) = Self::get_sprite_block(
+			sprite_array, 0x00, global_signals
+		);
 		
 		// Add select pointer
 		header_pointers.push(data_vector.len() as u32);
@@ -987,7 +1192,7 @@ impl BinResource {
 	}
 
 
-	fn get_bin_jpf_plain_text(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_jpf_plain_text(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "jpf_plain_text",
 		 * "char_index": PackedByteArray,
@@ -1014,7 +1219,8 @@ impl BinResource {
 		}
 		
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
-		let sprite_block = Self::get_sprite_block(sprite_array, data_vector.len() as u32);
+		let sprite_block = Self::get_sprite_block(
+			sprite_array, data_vector.len() as u32, global_signals);
 		
 		header_pointers.extend(sprite_block.0);
 		data_vector.extend(sprite_block.1);
@@ -1026,7 +1232,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_scriptable(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_scriptable(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "scriptable",
 		 * "name": String,
@@ -1049,12 +1255,13 @@ impl BinResource {
 		
 		// Cells
 		let cell_array: Array<Gd<Cell>> = dictionary.at("cells").to();
-		let cell_tuple: (Vec<u32>, Vec<u8>) = Self::get_cell_block(cell_array);
+		let cell_tuple: (Vec<u32>, Vec<u8>) = Self::get_cell_block(cell_array, global_signals);
 		let cell_pointers: Vec<u8> = Self::finalize_pointers(cell_tuple.0);
 		
 		// Sprites
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
-		let sprite_tuple: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(sprite_array, 0x00);
+		let sprite_tuple: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(
+			sprite_array, 0x00, global_signals);
 		let sprite_pointers: Vec<u8> = Self::finalize_pointers(sprite_tuple.0);
 		
 		// Scripts
@@ -1076,7 +1283,9 @@ impl BinResource {
 		match dictionary.get("palettes") {
 			Some(value) => {
 				let palette_array: Array<Gd<BinPalette>> = value.to();
-				let palette_tuple: (Vec<u32>, Vec<u8>) = Self::get_palette_block(palette_array);
+				let palette_tuple: (Vec<u32>, Vec<u8>) = Self::get_palette_block(
+					palette_array, global_signals
+				);
 				let palette_pointers: Vec<u8> = Self::finalize_pointers(palette_tuple.0);
 				
 				header_pointers.push(data_vector.len() as u32);
@@ -1094,7 +1303,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_multi_scriptable(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_multi_scriptable(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "multi_scriptable",
 		 * "data": Dictionary {
@@ -1116,7 +1325,9 @@ impl BinResource {
 		
 		for item in 0..inner_dict.len() {
 			header_pointers.push(data_vector.len() as u32);
-			data_vector.extend(Self::get_bin_scriptable(inner_dict.at(item as i64).to()));
+			data_vector.extend(Self::get_bin_scriptable(
+				inner_dict.at(item as i64).to(), global_signals)
+			);
 		}
 		
 		let mut object_vector: Vec<u8> = Self::finalize_pointers(header_pointers);

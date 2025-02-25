@@ -11,6 +11,7 @@ use crate::bin_identify::*;
 use crate::bin_sprite::BinSprite;
 use crate::bin_cell::Cell;
 use crate::bin_palette::BinPalette;
+use crate::bin_script::*;
 use crate::sprite_load_save::SpriteLoadSave;
 
 /* object_type:
@@ -30,7 +31,7 @@ struct Scriptable {
 	name: String,
 	cells: Array<Gd<Cell>>,
 	sprites: Array<Gd<BinSprite>>,
-	scripts: PackedByteArray,
+	scripts: Option<Gd<BinScript>>,
 	palettes: Array<Gd<BinPalette>>,
 }
 
@@ -56,10 +57,8 @@ impl IResource for BinResource {
 #[godot_api]
 impl BinResource {
 	/// Loads a BIN resource file, returning the objects contained within.
-	#[func] fn from_file(source_path: String) -> Dictionary {
+	#[func] fn from_file(source_path: String, instruction_db: Dictionary) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
-		
-		//godot_print!("Loading {}...", &source_path);
 		
 		if !path_buf.exists() {
 			godot_print!("File was not found");
@@ -69,7 +68,7 @@ impl BinResource {
 		}
 		
 		match fs::read(path_buf) {
-			Ok(data) => return Self::load_binary_data(data),
+			Ok(data) => return Self::load_binary_data(data, instruction_db),
 			
 			_ => return dict! {
 				"error": "Could not read file",
@@ -78,7 +77,7 @@ impl BinResource {
 	}
 
 
-	fn load_binary_data(bin_data: Vec<u8>) -> Dictionary {
+	fn load_binary_data(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
 		let data_length: usize = bin_data.len();
 		
 		// Smallest possible file is a SpriteList with a single, palette-less 1x1 sprite
@@ -123,7 +122,7 @@ impl BinResource {
 		if sprite_list {
 			return Self::load_sprite_list_file(bin_data);
 		} else {
-			return Self::load_resource_file(bin_data);
+			return Self::load_resource_file(bin_data, instruction_db);
 		}
 	}
 	
@@ -334,7 +333,7 @@ impl BinResource {
 	}
 	
 	
-	fn load_resource_file(bin_data: Vec<u8>) -> Dictionary {
+	fn load_resource_file(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
 		let mut resource_dictionary: Dictionary = Dictionary::new();
 		
@@ -433,7 +432,9 @@ impl BinResource {
 				
 				
 				ObjectType::Scriptable => {
-					let scriptable: Scriptable = Self::load_scriptable(object_bin_data, object_number);
+					let scriptable: Scriptable = Self::load_scriptable(
+						object_bin_data, object_number, &instruction_db
+					);
 					
 					if scriptable.name != "Player" {
 						object_number += 1;
@@ -460,7 +461,9 @@ impl BinResource {
 					let scriptables: Vec<Vec<u8>> = Self::get_objects(object_bin_data);
 					
 					for item in 0..scriptables.len() {
-						let scriptable: Scriptable = Self::load_scriptable(&scriptables[item], item);
+						let scriptable: Scriptable = Self::load_scriptable(
+							&scriptables[item], item, &instruction_db
+						);
 						let scriptable_dict: Dictionary = dict! {
 							"name": "Effect",
 							"type": "scriptable",
@@ -529,19 +532,22 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	fn load_scriptable(bin_data: &Vec<u8>, number: usize) -> Scriptable {
+	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary) -> Scriptable {
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 		
 		let mut name = format!("Object #{}", number);
 		let cells = Self::load_cells(bin_data, &pointers);
 		let sprites = Self::load_sprites(bin_data, &pointers);
-		let scripts = PackedByteArray::from(Self::load_scripts(bin_data, &pointers));
 		let palettes = Self::load_palettes(bin_data, &pointers);
 		
 		if palettes.len() > 0 {
 			name = "Player".into();
 		}
-		
+
+		let scripts: Option<Gd<BinScript>> = Self::load_scripts(
+			bin_data, &pointers, instruction_db, palettes.len() > 0
+		);
+
 		return Scriptable {
 			name: name.into(),
 			cells,
@@ -609,18 +615,155 @@ impl BinResource {
 	}
 	
 	
-	fn load_scripts(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<u8> {
-		// Load script
-		let scripts: Vec<u8>;
-		if pointers.len() == 4 {
-			scripts = bin_data[pointers[2]..pointers[3]].to_vec();
+	fn load_scripts(
+		bin_data: &Vec<u8>, pointers: &Vec<usize>, instruction_db: &Dictionary, play_data: bool
+	) -> Option<Gd<BinScript>> {
+		if pointers.len() < 3 {
+			return None;
 		}
-		
-		else {
-			scripts = bin_data[pointers[2]..].to_vec();
+
+		let mut cursor: usize = 0x00;
+
+		let script_bytes: Vec<u8>;
+
+		if play_data {
+			script_bytes = bin_data[pointers[2]..pointers[3]].to_vec();
+
+			if script_bytes[0x01] < 0x81 && script_bytes[0x01] > 0x02 {
+				if script_bytes[0x01] == 0x05 {
+					cursor = 0x300
+				} else {
+					cursor = 0x100;
+
+					if script_bytes[0x50] & 0x01 > 0 {
+						cursor = 0x180
+					}
+
+					if script_bytes[0x50] & 0x02 > 0 {
+						cursor += 0x80
+					}
+
+					if script_bytes[0x50] & 0x04 > 0 {
+						cursor += 0x80
+					}
+
+					if script_bytes[0x50] & 0x08 > 0 {
+						cursor += 0x80
+					}
+				}
+			} else {
+				cursor = 0x80
+			}
+
+			// Isuka hack, will fail if first byte in first action's flags is E5 (usually shouldn't)
+			if script_bytes[cursor] == 0xE5 {
+				cursor *= 2
+			}
+		} else {
+			script_bytes = bin_data[pointers[2]..].to_vec();
 		}
-		
-		return scripts;
+
+		let variables: PackedByteArray = PackedByteArray::from(script_bytes[0x00..cursor].to_vec());
+		let mut actions: Array<Gd<ScriptAction>> = Array::new();
+
+		while cursor < script_bytes.len() {
+			if script_bytes[cursor..cursor + 0x02] == [0xFD, 0x00] {
+				break;
+			}
+
+			let flags = u32::from_le_bytes([
+				script_bytes[cursor + 0x00],
+				script_bytes[cursor + 0x01],
+				script_bytes[cursor + 0x02],
+				script_bytes[cursor + 0x03]
+			]);
+			cursor += 0x04;
+
+			let lvflag = u16::from_le_bytes([
+				script_bytes[cursor + 0x00],
+				script_bytes[cursor + 0x01],
+			]);
+			cursor += 0x02;
+
+			let damage = script_bytes[cursor];
+			cursor += 0x01;
+
+			let flag2 = script_bytes[cursor];
+			cursor += 0x01;
+
+			// Get action instructions
+			let mut action_over: bool = false;
+			let mut instructions: Array<Gd<Instruction>> = Array::new();
+
+			while !action_over && cursor < bin_data.len() {
+				let inst_id = script_bytes[cursor];
+				let entry: Dictionary = instruction_db.at(inst_id).to();
+				cursor += 0x01;
+
+				{    // Form instruction
+					let id: u8 = inst_id;
+					let display_name: GString = entry.at("display_name").to();
+					let mut arguments: Array<Gd<InstructionArgument>> = Array::new();
+					let entry_args: Array<Dictionary> = entry.at("arguments").to();
+
+					// Add arguments
+					for entry_arg in entry_args.iter_shared() {
+						let arg_size: u8 = entry_arg.at("size").to();
+						let arg_signed: bool = entry_arg.at("signed").to();
+						let arg_value: i64;
+
+						match arg_size {
+							1 => {
+								if arg_signed {
+									arg_value = i8::from_le_bytes([script_bytes[cursor]]) as i64
+								} else {
+									arg_value = script_bytes[cursor] as i64
+								}
+							}
+
+							2 => {
+								if arg_signed {
+									arg_value = i16::from_le_bytes([
+										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
+									]) as i64
+								} else {
+									arg_value = u16::from_le_bytes([
+										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
+									]) as i64
+								}
+							}
+
+							_ => {
+								if arg_signed {
+									arg_value = i32::from_le_bytes([
+										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
+										script_bytes[cursor + 0x02], script_bytes[cursor + 0x03]
+									]) as i64
+								} else {
+									arg_value = u32::from_le_bytes([
+										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
+										script_bytes[cursor + 0x02], script_bytes[cursor + 0x03]
+									]) as i64
+								}
+							}
+						}
+
+						cursor += arg_size as usize;
+
+						arguments.push(
+							&InstructionArgument::from_data(arg_size, arg_value, arg_signed)
+						);
+					}
+
+					instructions.push(&Instruction::from_data(id, display_name, arguments));
+					action_over = id == 0xFF;
+				}
+			}
+
+			actions.push(&ScriptAction::from_data(flags, lvflag, damage, flag2, instructions));
+		}
+
+		return Some(BinScript::from_data(variables, actions));
 	}
 	
 	

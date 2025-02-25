@@ -8,7 +8,6 @@ use godot::prelude::*;
 /// An individual argument for BinScriptAction Instructions.
 pub struct InstructionArgument {
 	base: Base<Resource>,
-	#[export] pub display_name: GString,
 	/// Size of this argument. Possible values: 1, 2.
 	#[export] pub size: u8,
 	/// Value of this argument. 8, 16, or 32 bits.
@@ -68,7 +67,6 @@ pub struct BinScript {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
 			base,
-			display_name: Default::default(),
 			size: 1,
 			value: 0,
 			signed: false,
@@ -131,6 +129,17 @@ pub struct BinScript {
 		
 		return bin_data;
 	}
+
+	pub fn from_data(size: u8, value: i64, signed: bool) -> Gd<Self> {
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				size,
+				value,
+				signed,
+			}
+		})
+	}
 }
 
 
@@ -147,6 +156,18 @@ pub struct BinScript {
 		}
 		
 		return bin_data;
+	}
+
+
+	pub fn from_data(id: u8, display_name: GString, arguments: Array<Gd<InstructionArgument>>) -> Gd<Self> {
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				id,
+				display_name,
+				arguments
+			}
+		});
 	}
 
 
@@ -180,6 +201,21 @@ pub struct BinScript {
 		
 		return bin_data;
 	}
+
+	pub fn from_data(
+		flags: u32, lvflag: u16, damage: u8, flag2: u8, instructions: Array<Gd<Instruction>>
+	) -> Gd<Self> {
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				flags,
+				lvflag,
+				damage,
+				flag2,
+				instructions,
+			}
+		})
+	}
 }
 
 
@@ -195,5 +231,15 @@ pub struct BinScript {
 		}
 
 		return bin_data;
+	}
+
+	pub fn from_data(variables: PackedByteArray, actions: Array<Gd<ScriptAction>>) -> Gd<Self> {
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				variables,
+				actions,
+			}
+		})
 	}
 }

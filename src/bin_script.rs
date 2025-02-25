@@ -216,6 +216,120 @@ pub struct BinScript {
 
 
 #[godot_api] impl BinScript {
+	pub fn from_bin(bin_data: Vec<u8>, play_data: bool, instruction_db: &Dictionary) -> Gd<Self> {
+		let mut cursor: usize = 0x00;
+
+		if play_data {
+			if bin_data[0x01] < 0x81 && bin_data[0x01] > 0x02 {
+				if bin_data[0x01] == 0x05 {
+					cursor = 0x300
+				} else {
+					cursor = 0x100;
+
+					if bin_data[0x50] & 0x01 > 0 {
+						cursor = 0x180
+					}
+
+					if bin_data[0x50] & 0x02 > 0 {
+						cursor += 0x80
+					}
+
+					if bin_data[0x50] & 0x04 > 0 {
+						cursor += 0x80
+					}
+
+					if bin_data[0x50] & 0x08 > 0 {
+						cursor += 0x80
+					}
+				}
+			} else {
+				cursor = 0x80
+			}
+
+			// Isuka hack, will fail if first byte in first action's flags is E5 (usually shouldn't)
+			if bin_data[cursor] == 0xE5 {
+				cursor *= 2
+			}
+		}
+
+		let variables = PackedByteArray::from(bin_data[0x00..cursor].to_vec());
+		let mut actions: Array<Gd<ScriptAction>> = Array::new();
+
+		while cursor < bin_data.len() {
+			if bin_data[cursor..cursor + 0x02] == [0xFD, 0x00] {
+				break
+			}
+
+			let flags = u32::from_le_bytes(bin_data[cursor..cursor + 0x04].try_into().unwrap());
+			cursor += 0x04;
+			let lvflag = u16::from_le_bytes(bin_data[cursor..cursor + 0x02].try_into().unwrap());
+			cursor += 0x02;
+			let damage = bin_data[cursor];
+			cursor += 0x01;
+			let flag2 = bin_data[cursor];
+			cursor += 0x01;
+
+			let mut action_over: bool = false;
+			let mut instructions: Array<Gd<Instruction>> = Array::new();
+
+			while !action_over && cursor < bin_data.len() {
+				let id = bin_data[cursor];
+				let entry: Dictionary = instruction_db.at(id).to();
+				cursor += 0x01;
+
+				// Add arguments
+				let mut arguments: Array<Gd<InstructionArgument>> = Array::new();
+				let entry_args: Array<Dictionary> = entry.at("arguments").to();
+
+				for entry_arg in entry_args.iter_shared() {
+					let arg_size: u8 = entry_arg.at("size").to();
+					let arg_signed: bool = entry_arg.at("signed").to();
+					let arg_value: i64;
+
+					if arg_signed {
+						match arg_size {
+							1 => arg_value = (bin_data[cursor] as i8) as i64,
+							2 => arg_value = i16::from_le_bytes(
+								bin_data[cursor..cursor + 0x02].try_into().unwrap(),
+							) as i64,
+							_ => arg_value = i32::from_le_bytes(
+								bin_data[cursor..cursor + 0x04].try_into().unwrap()
+							) as i64,
+						}
+					} else {
+						match arg_size {
+							1 => arg_value = bin_data[cursor] as i64,
+							2 => arg_value = u16::from_le_bytes(
+								bin_data[cursor..cursor + 0x02].try_into().unwrap()
+							) as i64,
+							_ => arg_value = u32::from_le_bytes(
+								bin_data[cursor..cursor + 0x04].try_into().unwrap()
+							) as i64,
+						}
+					}
+
+					cursor += arg_size as usize;
+					arguments.push(
+						&InstructionArgument::from_data(arg_size, arg_value, arg_signed)
+					);
+				}
+
+				instructions.push(&Instruction::from_data(id, arguments));
+				action_over = id == 0xFF;
+			}
+
+			actions.push(&ScriptAction::from_data(flags, lvflag, damage, flag2, instructions));
+		}
+
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				variables,
+				actions,
+			}
+		})
+	}
+
 	pub fn to_bin(&self) -> Vec<u8> {
 		let mut bin_data: Vec<u8> = Vec::new();
 

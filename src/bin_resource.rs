@@ -31,7 +31,7 @@ struct Scriptable {
 	name: String,
 	cells: Array<Gd<Cell>>,
 	sprites: Array<Gd<BinSprite>>,
-	scripts: Option<Gd<BinScript>>,
+	scripts: Gd<BinScript>,
 	palettes: Array<Gd<BinPalette>>,
 }
 
@@ -544,8 +544,8 @@ impl BinResource {
 			name = "Player".into();
 		}
 
-		let scripts: Option<Gd<BinScript>> = Self::load_scripts(
-			bin_data, &pointers, instruction_db, palettes.len() > 0
+		let scripts: Gd<BinScript> = Self::load_scripts(
+			bin_data, &pointers, palettes.len() > 0, instruction_db
 		);
 
 		return Scriptable {
@@ -616,153 +616,18 @@ impl BinResource {
 	
 	
 	fn load_scripts(
-		bin_data: &Vec<u8>, pointers: &Vec<usize>, instruction_db: &Dictionary, play_data: bool
-	) -> Option<Gd<BinScript>> {
-		if pointers.len() < 3 {
-			return None;
-		}
-
-		let mut cursor: usize = 0x00;
-
+		bin_data: &Vec<u8>, pointers: &Vec<usize>, has_play_data: bool, instruction_db: &Dictionary
+	) -> Gd<BinScript>
+	{
 		let script_bytes: Vec<u8>;
 
-		if play_data {
+		if has_play_data {
 			script_bytes = bin_data[pointers[2]..pointers[3]].to_vec();
-
-			if script_bytes[0x01] < 0x81 && script_bytes[0x01] > 0x02 {
-				if script_bytes[0x01] == 0x05 {
-					cursor = 0x300
-				} else {
-					cursor = 0x100;
-
-					if script_bytes[0x50] & 0x01 > 0 {
-						cursor = 0x180
-					}
-
-					if script_bytes[0x50] & 0x02 > 0 {
-						cursor += 0x80
-					}
-
-					if script_bytes[0x50] & 0x04 > 0 {
-						cursor += 0x80
-					}
-
-					if script_bytes[0x50] & 0x08 > 0 {
-						cursor += 0x80
-					}
-				}
-			} else {
-				cursor = 0x80
-			}
-
-			// Isuka hack, will fail if first byte in first action's flags is E5 (usually shouldn't)
-			if script_bytes[cursor] == 0xE5 {
-				cursor *= 2
-			}
 		} else {
 			script_bytes = bin_data[pointers[2]..].to_vec();
 		}
 
-		let variables: PackedByteArray = PackedByteArray::from(script_bytes[0x00..cursor].to_vec());
-		let mut actions: Array<Gd<ScriptAction>> = Array::new();
-
-		while cursor < script_bytes.len() {
-			if script_bytes[cursor..cursor + 0x02] == [0xFD, 0x00] {
-				break;
-			}
-
-			let flags = u32::from_le_bytes([
-				script_bytes[cursor + 0x00],
-				script_bytes[cursor + 0x01],
-				script_bytes[cursor + 0x02],
-				script_bytes[cursor + 0x03]
-			]);
-			cursor += 0x04;
-
-			let lvflag = u16::from_le_bytes([
-				script_bytes[cursor + 0x00],
-				script_bytes[cursor + 0x01],
-			]);
-			cursor += 0x02;
-
-			let damage = script_bytes[cursor];
-			cursor += 0x01;
-
-			let flag2 = script_bytes[cursor];
-			cursor += 0x01;
-
-			// Get action instructions
-			let mut action_over: bool = false;
-			let mut instructions: Array<Gd<Instruction>> = Array::new();
-
-			while !action_over && cursor < bin_data.len() {
-				let inst_id = script_bytes[cursor];
-				let entry: Dictionary = instruction_db.at(inst_id).to();
-				cursor += 0x01;
-
-				{    // Form instruction
-					let id: u8 = inst_id;
-					let mut arguments: Array<Gd<InstructionArgument>> = Array::new();
-					let entry_args: Array<Dictionary> = entry.at("arguments").to();
-
-					// Add arguments
-					for entry_arg in entry_args.iter_shared() {
-						let arg_size: u8 = entry_arg.at("size").to();
-						let arg_signed: bool = entry_arg.at("signed").to();
-						let arg_value: i64;
-
-						match arg_size {
-							1 => {
-								if arg_signed {
-									arg_value = i8::from_le_bytes([script_bytes[cursor]]) as i64
-								} else {
-									arg_value = script_bytes[cursor] as i64
-								}
-							}
-
-							2 => {
-								if arg_signed {
-									arg_value = i16::from_le_bytes([
-										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
-									]) as i64
-								} else {
-									arg_value = u16::from_le_bytes([
-										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
-									]) as i64
-								}
-							}
-
-							_ => {
-								if arg_signed {
-									arg_value = i32::from_le_bytes([
-										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
-										script_bytes[cursor + 0x02], script_bytes[cursor + 0x03]
-									]) as i64
-								} else {
-									arg_value = u32::from_le_bytes([
-										script_bytes[cursor + 0x00], script_bytes[cursor + 0x01],
-										script_bytes[cursor + 0x02], script_bytes[cursor + 0x03]
-									]) as i64
-								}
-							}
-						}
-
-						cursor += arg_size as usize;
-
-						arguments.push(
-							&InstructionArgument::from_data(arg_size, arg_value, arg_signed)
-						);
-					}
-
-					instructions.push(&Instruction::from_data(id, arguments));
-					action_over = id == 0xFF;
-				}
-			}
-
-			actions.push(&ScriptAction::from_data(flags, lvflag, damage, flag2, instructions));
-		}
-
-		return Some(BinScript::from_data(variables, actions));
+		return BinScript::from_bin(script_bytes, has_play_data, instruction_db);
 	}
 	
 	
@@ -828,7 +693,8 @@ impl BinResource {
 	
 	#[func] pub fn save_resource_file(
 		dictionary: Dictionary, path: String, mut global_signals: Gd<Node>
-	) {
+	)
+	{
 		{
 			let mut path_check: PathBuf = PathBuf::from(&path);
 			let _ = path_check.pop();
@@ -959,7 +825,7 @@ impl BinResource {
 		
 		//godot_print!("Writing to {:?}", path_buf);
 		
-		match fs::File::create(path_buf) {
+		match File::create(path_buf) {
 			Ok(file) => {
 				let ref mut buffer = BufWriter::new(file);
 				let _ = buffer.write_all(&file_vector);
@@ -1136,7 +1002,8 @@ impl BinResource {
 
 	fn save_palettes_to_path(
 		palette_array: Array<Gd<BinPalette>>, path: &String, global_signals: &mut Gd<Node>
-	) {
+	)
+	{
 		let mut path_buf: PathBuf = PathBuf::from(path);
 		let _ = path_buf.pop();
 		let _ = path_buf.push("palettes");
@@ -1193,7 +1060,8 @@ impl BinResource {
 	// Returns (non-finalized) pointer vector and sprite vector
 	fn get_sprite_block(
 		sprite_array: Array<Gd<BinSprite>>, offset: u32, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut sprite_vector: Vec<u8> = Vec::new();
 		
@@ -1216,7 +1084,8 @@ impl BinResource {
 	
 	fn get_cell_block(
 		cell_array: Array<Gd<Cell>>, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut cell_vector: Vec<u8> = Vec::new();
 		
@@ -1239,7 +1108,8 @@ impl BinResource {
 	
 	fn get_palette_block(
 		palette_array: Array<Gd<BinPalette>>, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut palette_vector: Vec<u8> = Vec::new();
 		
@@ -1403,13 +1273,14 @@ impl BinResource {
 		// Sprites
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		let sprite_tuple: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(
-			sprite_array, 0x00, global_signals);
+			sprite_array, 0x00, global_signals
+		);
 		let sprite_pointers: Vec<u8> = Self::finalize_pointers(sprite_tuple.0);
 		
 		// Scripts
-		let scripts_array: PackedByteArray = dictionary.at("scripts").to();
-		let scripts: Vec<u8> = scripts_array.to_vec();
-		
+		let scripts: Gd<BinScript> = dictionary.at("scripts").to();
+		let script_bytes: Vec<u8> = BinScript::to_bin(&scripts.bind());
+
 		// Start writing...
 		header_pointers.push(data_vector.len() as u32);
 		data_vector.extend(cell_pointers);
@@ -1420,7 +1291,7 @@ impl BinResource {
 		data_vector.extend(sprite_tuple.1);
 		
 		header_pointers.push(data_vector.len() as u32);
-		data_vector.extend(scripts);
+		data_vector.extend(script_bytes);
 		
 		match dictionary.get("palettes") {
 			Some(value) => {

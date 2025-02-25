@@ -115,13 +115,11 @@ pub struct BinScript {
 	/// Returns a binary representation of this argument.
 	pub fn to_bin(&self) -> Vec<u8> {
 		let mut bin_data: Vec<u8> = Vec::new();
-		
-		if self.size == 1 {
-			bin_data.push(self.value as u8);
-		}
-		
-		else {
-			bin_data.extend(self.value.to_le_bytes());
+
+		match self.size {
+			1 => bin_data.push(self.value as u8),
+			2 => bin_data.extend(u16::to_le_bytes(self.value as u16)),
+			_ => bin_data.extend(self.value.to_le_bytes()),
 		}
 		
 		return bin_data;
@@ -338,6 +336,12 @@ pub struct BinScript {
 		for action in self.actions.iter_shared() {
 			let item = action.bind();
 			bin_data.extend(item.to_bin());
+		}
+
+		// End script
+		bin_data.extend([0xFD, 0x00]);
+		if bin_data.len() % 0x10 != 0 {
+			bin_data.resize(bin_data.len() + 0x10 - bin_data.len() % 0x10, 0u8);
 		}
 
 		return bin_data;

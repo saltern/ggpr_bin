@@ -702,7 +702,6 @@ impl BinResource {
 
 				{    // Form instruction
 					let id: u8 = inst_id;
-					let display_name: GString = entry.at("display_name").to();
 					let mut arguments: Array<Gd<InstructionArgument>> = Array::new();
 					let entry_args: Array<Dictionary> = entry.at("arguments").to();
 
@@ -755,7 +754,7 @@ impl BinResource {
 						);
 					}
 
-					instructions.push(&Instruction::from_data(id, display_name, arguments));
+					instructions.push(&Instruction::from_data(id, arguments));
 					action_over = id == 0xFF;
 				}
 			}

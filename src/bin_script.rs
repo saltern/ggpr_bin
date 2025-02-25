@@ -24,8 +24,6 @@ pub struct Instruction {
 	base: Base<Resource>,
 	/// ID number of this instruction. 0 - 255.
 	#[export] pub id: u8,
-	/// Display name for this instruction.
-	#[export] pub display_name: GString,
 	/// List of arguments in this instruction.
 	#[export] pub arguments: Array<Gd<InstructionArgument>>,
 }
@@ -80,7 +78,6 @@ pub struct BinScript {
 		Self {
 			base,
 			id: 0,
-			display_name: GString::from(""),
 			arguments: array![],
 		}
 	}
@@ -159,12 +156,11 @@ pub struct BinScript {
 	}
 
 
-	pub fn from_data(id: u8, display_name: GString, arguments: Array<Gd<InstructionArgument>>) -> Gd<Self> {
+	pub fn from_data(id: u8, arguments: Array<Gd<InstructionArgument>>) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
 			Self {
 				base,
 				id,
-				display_name,
 				arguments
 			}
 		});

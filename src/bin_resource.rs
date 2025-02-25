@@ -128,7 +128,7 @@ impl BinResource {
 	
 	
 	/// Loads a parsed resource from a directory, returning the objects contained within.
-	#[func] fn from_path(source_path: String) -> Dictionary {
+	#[func] fn from_path(source_path: String, instruction_db: Dictionary) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
 		godot_print!("Loading {}...", &source_path);
@@ -161,7 +161,7 @@ impl BinResource {
 			
 			
 			// We only get here if a directory was correctly read from the source_path
-			match Self::load_object_directory(entry.path()) {
+			match Self::load_object_directory(entry.path(), &instruction_db) {
 				Some(dictionary) => {
 					let name: String = dictionary.at("name").to();
 					
@@ -186,7 +186,7 @@ impl BinResource {
 	}
 	
 	
-	fn load_object_directory(path_buf: PathBuf) -> Option<Dictionary> {
+	fn load_object_directory(path_buf: PathBuf, instruction_db: &Dictionary) -> Option<Dictionary> {
 		let mut object_dictionary: Dictionary = Dictionary::new();
 
 		// Check if palettes folder...
@@ -241,7 +241,9 @@ impl BinResource {
 				let script_path: PathBuf = Path::new(&path_buf).join("script.bin");
 
 				if script_path.exists() {
-					let script = PackedByteArray::from(fs::read(script_path).unwrap());
+					let script = BinScript::from_bin(
+						fs::read(script_path).unwrap(), object_name == "player", instruction_db
+					);
 					object_dictionary.set("scripts", script);
 				}
 			}
@@ -894,8 +896,8 @@ impl BinResource {
 					Variant::from("Raw bytes"),
 				]);
 
-				let scripts: PackedByteArray = object_dict.at("scripts").to();
-				Self::save_script_to_path(scripts.to_vec(), &object_path);
+				let scripts: Gd<BinScript> = object_dict.at("scripts").to();
+				Self::save_script_to_path(scripts, &object_path);
 			}
 			
 			if object_dict.contains_key("palettes") {
@@ -994,9 +996,9 @@ impl BinResource {
 	}
 	
 
-	fn save_script_to_path(scripts: Vec<u8>, path: &String) {
+	fn save_script_to_path(scripts: Gd<BinScript>, path: &String) {
 		let mut script_file = File::create(format!("{}/script.bin", path)).unwrap();
-		script_file.write_all(scripts.as_slice()).unwrap();
+		let _ = script_file.write_all(scripts.bind().to_bin().as_slice());
 	}
 
 
@@ -1279,7 +1281,7 @@ impl BinResource {
 		
 		// Scripts
 		let scripts: Gd<BinScript> = dictionary.at("scripts").to();
-		let script_bytes: Vec<u8> = BinScript::to_bin(&scripts.bind());
+		let script_bytes: Vec<u8> = scripts.bind().to_bin();
 
 		// Start writing...
 		header_pointers.push(data_vector.len() as u32);

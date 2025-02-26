@@ -11,6 +11,7 @@ use crate::bin_identify::*;
 use crate::bin_sprite::BinSprite;
 use crate::bin_cell::Cell;
 use crate::bin_palette::BinPalette;
+use crate::bin_script::*;
 use crate::sprite_load_save::SpriteLoadSave;
 
 /* object_type:
@@ -30,7 +31,7 @@ struct Scriptable {
 	name: String,
 	cells: Array<Gd<Cell>>,
 	sprites: Array<Gd<BinSprite>>,
-	scripts: PackedByteArray,
+	scripts: Gd<BinScript>,
 	palettes: Array<Gd<BinPalette>>,
 }
 
@@ -56,10 +57,8 @@ impl IResource for BinResource {
 #[godot_api]
 impl BinResource {
 	/// Loads a BIN resource file, returning the objects contained within.
-	#[func] fn from_file(source_path: String) -> Dictionary {
+	#[func] fn from_file(source_path: String, instruction_db: Dictionary) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
-		
-		//godot_print!("Loading {}...", &source_path);
 		
 		if !path_buf.exists() {
 			godot_print!("File was not found");
@@ -69,7 +68,7 @@ impl BinResource {
 		}
 		
 		match fs::read(path_buf) {
-			Ok(data) => return Self::load_binary_data(data),
+			Ok(data) => return Self::load_binary_data(data, instruction_db),
 			
 			_ => return dict! {
 				"error": "Could not read file",
@@ -78,7 +77,7 @@ impl BinResource {
 	}
 
 
-	fn load_binary_data(bin_data: Vec<u8>) -> Dictionary {
+	fn load_binary_data(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
 		let data_length: usize = bin_data.len();
 		
 		// Smallest possible file is a SpriteList with a single, palette-less 1x1 sprite
@@ -123,13 +122,13 @@ impl BinResource {
 		if sprite_list {
 			return Self::load_sprite_list_file(bin_data);
 		} else {
-			return Self::load_resource_file(bin_data);
+			return Self::load_resource_file(bin_data, instruction_db);
 		}
 	}
 	
 	
 	/// Loads a parsed resource from a directory, returning the objects contained within.
-	#[func] fn from_path(source_path: String) -> Dictionary {
+	#[func] fn from_path(source_path: String, instruction_db: Dictionary) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
 		godot_print!("Loading {}...", &source_path);
@@ -162,7 +161,7 @@ impl BinResource {
 			
 			
 			// We only get here if a directory was correctly read from the source_path
-			match Self::load_object_directory(entry.path()) {
+			match Self::load_object_directory(entry.path(), &instruction_db) {
 				Some(dictionary) => {
 					let name: String = dictionary.at("name").to();
 					
@@ -187,7 +186,7 @@ impl BinResource {
 	}
 	
 	
-	fn load_object_directory(path_buf: PathBuf) -> Option<Dictionary> {
+	fn load_object_directory(path_buf: PathBuf, instruction_db: &Dictionary) -> Option<Dictionary> {
 		let mut object_dictionary: Dictionary = Dictionary::new();
 
 		// Check if palettes folder...
@@ -242,7 +241,9 @@ impl BinResource {
 				let script_path: PathBuf = Path::new(&path_buf).join("script.bin");
 
 				if script_path.exists() {
-					let script = PackedByteArray::from(fs::read(script_path).unwrap());
+					let script = BinScript::from_bin(
+						fs::read(script_path).unwrap(), object_name == "player", instruction_db
+					);
 					object_dictionary.set("scripts", script);
 				}
 			}
@@ -334,7 +335,7 @@ impl BinResource {
 	}
 	
 	
-	fn load_resource_file(bin_data: Vec<u8>) -> Dictionary {
+	fn load_resource_file(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
 		let mut resource_dictionary: Dictionary = Dictionary::new();
 		
@@ -433,7 +434,9 @@ impl BinResource {
 				
 				
 				ObjectType::Scriptable => {
-					let scriptable: Scriptable = Self::load_scriptable(object_bin_data, object_number);
+					let scriptable: Scriptable = Self::load_scriptable(
+						object_bin_data, object_number, &instruction_db
+					);
 					
 					if scriptable.name != "Player" {
 						object_number += 1;
@@ -460,7 +463,9 @@ impl BinResource {
 					let scriptables: Vec<Vec<u8>> = Self::get_objects(object_bin_data);
 					
 					for item in 0..scriptables.len() {
-						let scriptable: Scriptable = Self::load_scriptable(&scriptables[item], item);
+						let scriptable: Scriptable = Self::load_scriptable(
+							&scriptables[item], item, &instruction_db
+						);
 						let scriptable_dict: Dictionary = dict! {
 							"name": "Effect",
 							"type": "scriptable",
@@ -529,19 +534,22 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	fn load_scriptable(bin_data: &Vec<u8>, number: usize) -> Scriptable {
+	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary) -> Scriptable {
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 		
 		let mut name = format!("Object #{}", number);
 		let cells = Self::load_cells(bin_data, &pointers);
 		let sprites = Self::load_sprites(bin_data, &pointers);
-		let scripts = PackedByteArray::from(Self::load_scripts(bin_data, &pointers));
 		let palettes = Self::load_palettes(bin_data, &pointers);
 		
 		if palettes.len() > 0 {
 			name = "Player".into();
 		}
-		
+
+		let scripts: Gd<BinScript> = Self::load_scripts(
+			bin_data, &pointers, palettes.len() > 0, instruction_db
+		);
+
 		return Scriptable {
 			name: name.into(),
 			cells,
@@ -609,18 +617,19 @@ impl BinResource {
 	}
 	
 	
-	fn load_scripts(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Vec<u8> {
-		// Load script
-		let scripts: Vec<u8>;
-		if pointers.len() == 4 {
-			scripts = bin_data[pointers[2]..pointers[3]].to_vec();
+	fn load_scripts(
+		bin_data: &Vec<u8>, pointers: &Vec<usize>, has_play_data: bool, instruction_db: &Dictionary
+	) -> Gd<BinScript>
+	{
+		let script_bytes: Vec<u8>;
+
+		if has_play_data {
+			script_bytes = bin_data[pointers[2]..pointers[3]].to_vec();
+		} else {
+			script_bytes = bin_data[pointers[2]..].to_vec();
 		}
-		
-		else {
-			scripts = bin_data[pointers[2]..].to_vec();
-		}
-		
-		return scripts;
+
+		return BinScript::from_bin(script_bytes, has_play_data, instruction_db);
 	}
 	
 	
@@ -686,7 +695,8 @@ impl BinResource {
 	
 	#[func] pub fn save_resource_file(
 		dictionary: Dictionary, path: String, mut global_signals: Gd<Node>
-	) {
+	)
+	{
 		{
 			let mut path_check: PathBuf = PathBuf::from(&path);
 			let _ = path_check.pop();
@@ -817,7 +827,7 @@ impl BinResource {
 		
 		//godot_print!("Writing to {:?}", path_buf);
 		
-		match fs::File::create(path_buf) {
+		match File::create(path_buf) {
 			Ok(file) => {
 				let ref mut buffer = BufWriter::new(file);
 				let _ = buffer.write_all(&file_vector);
@@ -886,8 +896,8 @@ impl BinResource {
 					Variant::from("Raw bytes"),
 				]);
 
-				let scripts: PackedByteArray = object_dict.at("scripts").to();
-				Self::save_script_to_path(scripts.to_vec(), &object_path);
+				let scripts: Gd<BinScript> = object_dict.at("scripts").to();
+				Self::save_script_to_path(scripts, &object_path);
 			}
 			
 			if object_dict.contains_key("palettes") {
@@ -986,15 +996,16 @@ impl BinResource {
 	}
 	
 
-	fn save_script_to_path(scripts: Vec<u8>, path: &String) {
+	fn save_script_to_path(scripts: Gd<BinScript>, path: &String) {
 		let mut script_file = File::create(format!("{}/script.bin", path)).unwrap();
-		script_file.write_all(scripts.as_slice()).unwrap();
+		let _ = script_file.write_all(scripts.bind().to_bin().as_slice());
 	}
 
 
 	fn save_palettes_to_path(
 		palette_array: Array<Gd<BinPalette>>, path: &String, global_signals: &mut Gd<Node>
-	) {
+	)
+	{
 		let mut path_buf: PathBuf = PathBuf::from(path);
 		let _ = path_buf.pop();
 		let _ = path_buf.push("palettes");
@@ -1051,7 +1062,8 @@ impl BinResource {
 	// Returns (non-finalized) pointer vector and sprite vector
 	fn get_sprite_block(
 		sprite_array: Array<Gd<BinSprite>>, offset: u32, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut sprite_vector: Vec<u8> = Vec::new();
 		
@@ -1074,7 +1086,8 @@ impl BinResource {
 	
 	fn get_cell_block(
 		cell_array: Array<Gd<Cell>>, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut cell_vector: Vec<u8> = Vec::new();
 		
@@ -1097,7 +1110,8 @@ impl BinResource {
 	
 	fn get_palette_block(
 		palette_array: Array<Gd<BinPalette>>, global_signals: &mut Gd<Node>
-	) -> (Vec<u32>, Vec<u8>) {
+	) -> (Vec<u32>, Vec<u8>)
+	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
 		let mut palette_vector: Vec<u8> = Vec::new();
 		
@@ -1261,13 +1275,14 @@ impl BinResource {
 		// Sprites
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		let sprite_tuple: (Vec<u32>, Vec<u8>) = Self::get_sprite_block(
-			sprite_array, 0x00, global_signals);
+			sprite_array, 0x00, global_signals
+		);
 		let sprite_pointers: Vec<u8> = Self::finalize_pointers(sprite_tuple.0);
 		
 		// Scripts
-		let scripts_array: PackedByteArray = dictionary.at("scripts").to();
-		let scripts: Vec<u8> = scripts_array.to_vec();
-		
+		let scripts: Gd<BinScript> = dictionary.at("scripts").to();
+		let script_bytes: Vec<u8> = scripts.bind().to_bin();
+
 		// Start writing...
 		header_pointers.push(data_vector.len() as u32);
 		data_vector.extend(cell_pointers);
@@ -1278,7 +1293,7 @@ impl BinResource {
 		data_vector.extend(sprite_tuple.1);
 		
 		header_pointers.push(data_vector.len() as u32);
-		data_vector.extend(scripts);
+		data_vector.extend(script_bytes);
 		
 		match dictionary.get("palettes") {
 			Some(value) => {

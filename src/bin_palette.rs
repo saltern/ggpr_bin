@@ -25,7 +25,7 @@ pub struct BinPalette {
 impl IResource for BinPalette {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
-			base: base,
+			base,
 			palette: PackedByteArray::from(vec![]),
 		}
 	}
@@ -88,7 +88,7 @@ impl BinPalette {
 		return Some(
 			Gd::from_init_fn(|base| {
 				BinPalette {
-					base: base,
+					base,
 					palette: PackedByteArray::from(palette),
 				}
 			})
@@ -121,7 +121,7 @@ impl BinPalette {
 		return Some(
 			Gd::from_init_fn(|base| {
 				Self {
-					base: base,
+					base,
 					palette: PackedByteArray::from(sprite_data.palette),
 				}
 			})
@@ -154,7 +154,7 @@ impl BinPalette {
 		return Some(
 			Gd::from_init_fn(|base| {
 				Self {
-					base: base,
+					base,
 					palette: PackedByteArray::from(sprite_data.palette),
 				}
 			})
@@ -210,7 +210,7 @@ impl BinPalette {
 		return Some(
 			Gd::from_init_fn(|base| {
 				Self {
-					base: base,
+					base,
 					palette: PackedByteArray::from(palette),
 				}
 			})
@@ -291,7 +291,7 @@ impl BinPalette {
 	}
 	
 	
-	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice-versa.
+	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice versa.
 	#[func]
 	pub fn reindex(&mut self) {		
 		let mut temp_pal: Vec<u8> = vec![0u8; self.palette.len()];

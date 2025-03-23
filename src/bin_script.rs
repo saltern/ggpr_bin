@@ -1,4 +1,18 @@
+use std::cmp::max;
+use godot::classes::{animation, Animation};
 use godot::prelude::*;
+
+// I don't like this either.
+const ID_CELLBEGIN		: u8 = 0x00;
+//const ID_BACK_MOTION	: u8 = 0x03;
+const ID_SEMITRANS		: u8 = 0x06;
+const ID_SCALE			: u8 = 0x07;
+const ID_ROT			: u8 = 0x08;
+const ID_DRAW_NORMAL	: u8 = 0x10;
+const ID_DRAW_REVERSE	: u8 = 0x11;
+const ID_CELL_JUMP		: u8 = 0x27;
+const ID_VISUAL			: u8 = 0x45;
+const ID_END_ACTION		: u8 = 0xFF;
 
 
 // Class definitions
@@ -196,6 +210,7 @@ pub struct BinScript {
 		return bin_data;
 	}
 
+
 	pub fn from_data(
 		flags: u32, lvflag: u16, damage: u8, flag2: u8, instructions: Array<Gd<Instruction>>
 	) -> Gd<Self> {
@@ -209,6 +224,182 @@ pub struct BinScript {
 				instructions,
 			}
 		})
+	}
+
+
+	#[func] pub fn get_animation(&self) -> Gd<Animation> {
+		let mut anim: Gd<Animation> = Animation::new_gd();
+		anim.set_length(0.00);
+
+		let track_cells		: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_semitrans	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_scale		: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_scale_y	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_rotate	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_draw		: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_cell_jump	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_visual	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_end		: i32 = anim.add_track(animation::TrackType::METHOD);
+
+		for track in 0..anim.get_track_count() {
+			anim.track_set_path(track, ".");
+		}
+
+		// Resets
+		anim.track_insert_key(track_semitrans, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_semitrans", 0, 0xFF]
+		}.to_variant());
+
+		anim.track_insert_key(track_scale, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_scale", 0, -1]
+		}.to_variant());
+
+		anim.track_insert_key(track_scale_y, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_scale", 1, -1]
+		}.to_variant());
+		
+		anim.track_insert_key(track_rotate, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_rotate", 0, 0]
+		}.to_variant());
+		
+		anim.track_insert_key(track_draw, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_draw_normal"]
+		}.to_variant());
+		
+		anim.track_insert_key(track_visual, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_visual", 0, 1]
+		}.to_variant());
+		
+		anim.track_insert_key(track_visual, 0.1, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_visual", 3, 0]
+		}.to_variant());
+		
+		let mut frame: i64 = 1;
+		let mut frame_offset: i64 = 0;
+
+		for item in self.instructions.iter_shared() {
+			let instruction = item.bind();
+
+			// By ID
+			match instruction.id {
+				ID_CELLBEGIN => {
+					frame += frame_offset;
+
+					let cell_length: i64 = max(1, instruction.arguments.at(0).bind().value);
+					let cell_number: i64 = instruction.arguments.at(1).bind().value;
+					let anim_length: f32 = anim.get_length();
+
+					anim.set_length(anim_length + cell_length as f32);
+					anim.track_insert_key(track_cells, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_cell", cell_number]
+					}.to_variant());
+
+					frame_offset = cell_length;
+				}
+
+				ID_SEMITRANS => {
+					let blend_value: i64 = instruction.arguments.at(0).bind().value;
+					let blend_mode: i64 = instruction.arguments.at(1).bind().value;
+
+					anim.track_insert_key(track_semitrans, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_semitrans", blend_mode, blend_value]
+					}.to_variant());
+				}
+
+				ID_SCALE => {
+					let scale_mode: i64 = instruction.arguments.at(0).bind().value;
+					let scale_value: i64 = instruction.arguments.at(1).bind().value;
+					let which_track: i32;
+
+					if scale_mode % 2 == 1 {
+						which_track = track_scale_y;
+					} else {
+						which_track = track_scale;
+					}
+
+					anim.track_insert_key(which_track, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_semitrans", scale_mode, scale_value]
+					}.to_variant());
+				}
+
+				ID_ROT => {
+					let rotate_mode: i64 = instruction.arguments.at(0).bind().value;
+					let rotate_value: i64 = instruction.arguments.at(1).bind().value;
+
+					anim.track_insert_key(track_rotate, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_rotate", rotate_mode, rotate_value]
+					}.to_variant());
+				}
+
+				ID_DRAW_NORMAL => {
+					anim.track_insert_key(track_draw, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_draw_normal"]
+					}.to_variant());
+				}
+
+				ID_DRAW_REVERSE => {
+					anim.track_insert_key(track_draw, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_draw_reverse"]
+					}.to_variant());
+				}
+
+				ID_CELL_JUMP => {
+					if instruction.arguments.at(0).bind().value > 0 {
+						continue;
+					}
+
+					let cell_begin_number: i64 = instruction.arguments.at(2).bind().value;
+
+					anim.track_insert_key(track_cell_jump, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_cell_jump", cell_begin_number]
+					}.to_variant());
+				}
+
+				ID_VISUAL => {
+					let visual_mode: i64 = instruction.arguments.at(0).bind().value;
+					let visual_argument: i64 = instruction.arguments.at(1).bind().value;
+					let visual_offset: f64;// = 0.0;
+
+					if visual_mode == 1 {
+						visual_offset = -0.1;
+					} else {
+						visual_offset = 0.0;
+					}
+
+					anim.track_insert_key(track_visual, frame as f64 + visual_offset, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_visual", visual_mode, visual_argument]
+					}.to_variant());
+				}
+
+				ID_END_ACTION => {
+					let end_mode: i64 = instruction.arguments.at(0).bind().value;
+
+					anim.track_insert_key(track_end, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_end_action", end_mode]
+					}.to_variant());
+				}
+
+				_ => ()
+			}
+		}
+
+		return anim;
 	}
 }
 

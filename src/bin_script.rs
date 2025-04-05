@@ -87,24 +87,24 @@ pub struct PlayVariables {
 	#[export] pub homing_jump_x_resist: i16,
 	#[export] pub homing_target_y_offset: i16,
 	#[export] pub airdash_height: i16,
-	#[export] pub pd_airdash_fwd_time: i16,
-	#[export] pub pd_airdash_bwd_time: i16,
-	#[export] pub pd_faint_point: i16,
-	#[export] pub pd_defense_point: i16,
-	#[export] pub pd_konjo: i16,
-	#[export] pub pd_kaishin: i16,
-	#[export] pub pd_defense_gravity: i16,
-	#[export] pub pd_airdash_count: i16,
-	#[export] pub pd_jump_count: i16,
-	#[export] pub pd_airdash_fwd_atk_time: i16,
-	#[export] pub pd_airdash_bwd_atk_time: i16,
-	#[export] pub pd_tension_walk: i16,
-	#[export] pub pd_tension_jump: i16,
-	#[export] pub pd_tension_dash: i16,
-	#[export] pub pd_tension_airdash: i16,
-	#[export] pub pdgc_gauge_def_point: i16,
-	#[export] pub pdgc_gauge_recovery: i16,
-	#[export] pub pd_tension_ib: i16,
+	#[export] pub airdash_fwd_time: i16,
+	#[export] pub airdash_bwd_time: i16,
+	#[export] pub faint_point: i16,
+	#[export] pub defense_point: i16,
+	#[export] pub konjo: i16,
+	#[export] pub kaishin: i16,
+	#[export] pub defense_gravity: i16,
+	#[export] pub airdash_count: i16,
+	#[export] pub jump_count: i16,
+	#[export] pub airdash_fwd_atk_time: i16,
+	#[export] pub airdash_bwd_atk_time: i16,
+	#[export] pub tension_walk: i16,
+	#[export] pub tension_jump: i16,
+	#[export] pub tension_dash: i16,
+	#[export] pub tension_airdash: i16,
+	#[export] pub gc_gauge_def_point: i16,
+	#[export] pub gc_gauge_recovery: i16,
+	#[export] pub tension_ib: i16,
 	#[export] pub padding: PackedByteArray,
 }
 
@@ -238,24 +238,24 @@ pub struct BinScript {
 			homing_jump_x_resist: 0,
 			homing_target_y_offset: 0,
 			airdash_height: 0,
-			pd_airdash_fwd_time: 0,
-			pd_airdash_bwd_time: 0,
-			pd_faint_point: 0,
-			pd_defense_point: 0,
-			pd_konjo: 0,
-			pd_kaishin: 0,
-			pd_defense_gravity: 0,
-			pd_airdash_count: 0,
-			pd_jump_count: 0,
-			pd_airdash_fwd_atk_time: 0,
-			pd_airdash_bwd_atk_time: 0,
-			pd_tension_walk: 0,
-			pd_tension_jump: 0,
-			pd_tension_dash: 0,
-			pd_tension_airdash: 0,
-			pdgc_gauge_def_point: 0,
-			pdgc_gauge_recovery: 0,
-			pd_tension_ib: 0,
+			airdash_fwd_time: 0,
+			airdash_bwd_time: 0,
+			faint_point: 0,
+			defense_point: 0,
+			konjo: 0,
+			kaishin: 0,
+			defense_gravity: 0,
+			airdash_count: 0,
+			jump_count: 0,
+			airdash_fwd_atk_time: 0,
+			airdash_bwd_atk_time: 0,
+			tension_walk: 0,
+			tension_jump: 0,
+			tension_dash: 0,
+			tension_airdash: 0,
+			gc_gauge_def_point: 0,
+			gc_gauge_recovery: 0,
+			tension_ib: 0,
 			padding: PackedByteArray::new(),
 		}
 	}
@@ -635,24 +635,24 @@ pub struct BinScript {
 				homing_jump_x_resist	: values[0x12],
 				homing_target_y_offset	: values[0x13],
 				airdash_height			: values[0x14],
-				pd_airdash_fwd_time		: values[0x15],
-				pd_airdash_bwd_time		: values[0x16],
-				pd_faint_point			: values[0x17],
-				pd_defense_point		: values[0x18],
-				pd_konjo				: values[0x19],
-				pd_kaishin				: values[0x1A],
-				pd_defense_gravity		: values[0x1B],
-				pd_airdash_count		: values[0x1C],
-				pd_jump_count			: values[0x1D],
-				pd_airdash_fwd_atk_time	: values[0x1E],
-				pd_airdash_bwd_atk_time	: values[0x1F],
-				pd_tension_walk			: values[0x20],
-				pd_tension_jump			: values[0x21],
-				pd_tension_dash			: values[0x22],
-				pd_tension_airdash		: values[0x23],
-				pdgc_gauge_def_point	: values[0x24],
-				pdgc_gauge_recovery		: values[0x25],
-				pd_tension_ib			: values[0x26],
+				airdash_fwd_time		: values[0x15],
+				airdash_bwd_time		: values[0x16],
+				faint_point				: values[0x17],
+				defense_point			: values[0x18],
+				konjo					: values[0x19],
+				kaishin					: values[0x1A],
+				defense_gravity			: values[0x1B],
+				airdash_count			: values[0x1C],
+				jump_count				: values[0x1D],
+				airdash_fwd_atk_time	: values[0x1E],
+				airdash_bwd_atk_time	: values[0x1F],
+				tension_walk			: values[0x20],
+				tension_jump			: values[0x21],
+				tension_dash			: values[0x22],
+				tension_airdash			: values[0x23],
+				gc_gauge_def_point		: values[0x24],
+				gc_gauge_recovery		: values[0x25],
+				tension_ib				: values[0x26],
 				padding					: bin_data[0x50..0x80].to_vec().into()
 			}
 		});
@@ -684,24 +684,24 @@ pub struct BinScript {
 		bin_data.extend(self.homing_jump_x_resist.to_le_bytes());
 		bin_data.extend(self.homing_target_y_offset.to_le_bytes());
 		bin_data.extend(self.airdash_height.to_le_bytes());
-		bin_data.extend(self.pd_airdash_fwd_time.to_le_bytes());
-		bin_data.extend(self.pd_airdash_bwd_time.to_le_bytes());
-		bin_data.extend(self.pd_faint_point.to_le_bytes());
-		bin_data.extend(self.pd_defense_point.to_le_bytes());
-		bin_data.extend(self.pd_konjo.to_le_bytes());
-		bin_data.extend(self.pd_kaishin.to_le_bytes());
-		bin_data.extend(self.pd_defense_gravity.to_le_bytes());
-		bin_data.extend(self.pd_airdash_count.to_le_bytes());
-		bin_data.extend(self.pd_jump_count.to_le_bytes());
-		bin_data.extend(self.pd_airdash_fwd_atk_time.to_le_bytes());
-		bin_data.extend(self.pd_airdash_bwd_atk_time.to_le_bytes());
-		bin_data.extend(self.pd_tension_walk.to_le_bytes());
-		bin_data.extend(self.pd_tension_jump.to_le_bytes());
-		bin_data.extend(self.pd_tension_dash.to_le_bytes());
-		bin_data.extend(self.pd_tension_airdash.to_le_bytes());
-		bin_data.extend(self.pdgc_gauge_def_point.to_le_bytes());
-		bin_data.extend(self.pdgc_gauge_recovery.to_le_bytes());
-		bin_data.extend(self.pd_tension_ib.to_le_bytes());
+		bin_data.extend(self.airdash_fwd_time.to_le_bytes());
+		bin_data.extend(self.airdash_bwd_time.to_le_bytes());
+		bin_data.extend(self.faint_point.to_le_bytes());
+		bin_data.extend(self.defense_point.to_le_bytes());
+		bin_data.extend(self.konjo.to_le_bytes());
+		bin_data.extend(self.kaishin.to_le_bytes());
+		bin_data.extend(self.defense_gravity.to_le_bytes());
+		bin_data.extend(self.airdash_count.to_le_bytes());
+		bin_data.extend(self.jump_count.to_le_bytes());
+		bin_data.extend(self.airdash_fwd_atk_time.to_le_bytes());
+		bin_data.extend(self.airdash_bwd_atk_time.to_le_bytes());
+		bin_data.extend(self.tension_walk.to_le_bytes());
+		bin_data.extend(self.tension_jump.to_le_bytes());
+		bin_data.extend(self.tension_dash.to_le_bytes());
+		bin_data.extend(self.tension_airdash.to_le_bytes());
+		bin_data.extend(self.gc_gauge_def_point.to_le_bytes());
+		bin_data.extend(self.gc_gauge_recovery.to_le_bytes());
+		bin_data.extend(self.tension_ib.to_le_bytes());
 		bin_data.extend(self.padding.to_vec());
 
 		return bin_data;

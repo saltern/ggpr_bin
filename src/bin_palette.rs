@@ -35,7 +35,7 @@ impl IResource for BinPalette {
 #[godot_api]
 impl BinPalette {
 	/// The default header to save palettes with.
-	const DEFAULT_HEADER: &[u8; 16] = &[
+	const DEFAULT_HEADER: [u8; 16] = [
 		0x03, 0x00, 0x20, 0x00,
 		0x08, 0x00, 0xC0, 0x00,
 		0x20, 0x01, 0x08, 0x00,

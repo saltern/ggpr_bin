@@ -154,7 +154,7 @@ pub struct ChainTable {
 /// A character's variables and chain tables.
 pub struct PlayData {
 	base: Base<Resource>,
-	#[export] pub variables: Gd<PlayVariables>,
+	#[var] pub variables: Gd<PlayVariables>,
 	#[export] pub chain_tables: Array<Gd<ChainTable>>,
 }
 
@@ -307,7 +307,7 @@ pub struct BinScript {
 	fn init(base: Base<Resource>) -> Self {
 		Self {
 			base,
-			variables: PlayVariables::new_gd(),
+			variables: Default::default(),
 			chain_tables: array![],
 		}
 	}

@@ -431,8 +431,8 @@ impl Cell {
 			let texture: Gd<ImageTexture> = ImageTexture::create_from_image(&image).unwrap();
 
 			let mut this_rect: Dictionary = Dictionary::new();
-			this_rect.set("x_offset", region.x_offset);
-			this_rect.set("y_offset", region.y_offset);
+			this_rect.set("x_offset", region.x_offset + region.crop_x_offset as i16 * 8);
+			this_rect.set("y_offset", region.y_offset + region.crop_y_offset as i16 * 8);
 			this_rect.set("texture", texture);
 			dictionary.set(region_id as u64, this_rect);
 		}

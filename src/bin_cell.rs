@@ -3,11 +3,13 @@ use std::io::BufWriter;
 use std::fs;
 use std::path::PathBuf;
 use std::ops::Deref;
+use godot::classes::{Image, ImageTexture};
 use serde::Serialize;
 use serde::Deserialize;
 
 use godot::prelude::*;
-
+use godot::classes::image::Format;
+use crate::bin_sprite::BinSprite;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct CellJSONBox {
@@ -189,7 +191,7 @@ impl Cell {
 			let new_hitbox: Gd<BoxInfo> = Gd::from_init_fn(
 				|base| {
 					BoxInfo {
-						base: base,
+						base,
 						x_offset: hitbox.x_offset,
 						y_offset: hitbox.y_offset,
 						width: hitbox.width,
@@ -331,4 +333,123 @@ impl Cell {
 	#[func] pub fn clamp_sprite_index(&mut self, sprite_max: u16) {
 		self.sprite_index = self.sprite_index.clamp(0, sprite_max);
 	}
+
+
+	#[func] pub fn rebuild_sprite(&self, sprite: Gd<BinSprite>, visual_1: bool) -> Dictionary {
+		let mut region_vec: Vec<Gd<BoxInfo>> = Vec::new();
+
+		for box_type in [3u16, 6].iter() {
+			for item in self.boxes.iter_shared() {
+				let hitbox = item.bind();
+
+				// Not a region box
+				if &hitbox.box_type != box_type { continue; }
+
+				region_vec.push(item.clone());
+			}
+		}
+
+		if region_vec.is_empty() {
+			return dict![];
+		}
+
+		// Results dictionary
+		let mut dictionary: Dictionary = Dictionary::new();
+
+		// Allocate pow2 texture like +R does...
+		let sprite_ref = sprite.bind();
+		let pow2_width = sprite_ref.width.next_power_of_two() as isize;
+		let pow2_height = sprite_ref.height.next_power_of_two() as isize;
+
+		let mut pow2_src_pixels: Vec<u8> = Vec::with_capacity((pow2_width * pow2_height) as usize);
+
+		// Blit source sprite into pow2 texture
+		for row in 0..sprite_ref.height as usize {
+			for col in 0..sprite_ref.width as usize {
+				pow2_src_pixels.push(sprite_ref.pixels[row * sprite_ref.width as usize + col]);
+			}
+
+			for _col in sprite_ref.width as isize..pow2_width {
+				pow2_src_pixels.push(0x00);
+			}
+		}
+
+		for _row in sprite_ref.height as isize..pow2_height {
+			for _col in 0..pow2_width {
+				pow2_src_pixels.push(0x00);
+			}
+		}
+
+		for region_id in 0..region_vec.len() {
+			let region = region_vec[region_id].bind();
+
+			let region_x = region.x_offset as isize;
+			let region_y = region.y_offset as isize;
+
+			let sprite_width = sprite_ref.width as isize;
+			let sprite_height = sprite_ref.height as isize;
+
+			// Get sampling origin coords with weird +R mixed system
+			let x_origin: isize;
+			let y_origin: isize;
+
+			if region.x_offset < 0 {
+				x_origin = wrap(region_x, 0, sprite_width - 1);
+			} else {
+				x_origin = wrap(region_x, 0, pow2_width - 1);
+			}
+
+			if region.y_offset < 0 {
+				y_origin = wrap(region_y, 0, sprite_height - 1);
+			} else {
+				y_origin = wrap(region_y, 0, pow2_height - 1);
+			}
+
+			// Allocate target pixel vector
+			let mut pixel_vec: Vec<u8> = vec![0u8; region.width as usize * region.height as usize];
+
+			for row in 0..region.height as isize {
+				for col in 0..region.width as isize {
+					let source_x = wrap(x_origin + col, 0, pow2_width - 1);
+					let mut source_y = wrap(y_origin + row, 0, pow2_height - 1);
+
+					if visual_1 && region.box_type == 6 {
+						source_y += region.height as isize - row * 2;
+					}
+
+					let source = source_y * pow2_width + source_x;
+					let target = row * region.width as isize + col;
+
+					pixel_vec[target as usize] = pow2_src_pixels[source as usize];
+				}
+			}
+
+			let image: Gd<Image> = Image::create_from_data(
+				region.width as i32, region.height as i32, false, Format::L8, &PackedByteArray::from(pixel_vec)
+			).unwrap();
+
+			let texture: Gd<ImageTexture> = ImageTexture::create_from_image(&image).unwrap();
+
+			let mut this_rect: Dictionary = Dictionary::new();
+			this_rect.set("x_offset", region.x_offset);
+			this_rect.set("y_offset", region.y_offset);
+			this_rect.set("texture", texture);
+			dictionary.set(region_id as u64, this_rect);
+		}
+
+		return dictionary;
+	}
+}
+
+
+// Not my code
+pub fn wrap(value: isize, min: isize, max: isize) -> isize {
+	let (mut value, min, max) = (value as i128, min as i128, max as i128);
+	let range_size = max - min + 1;
+
+	if value < min {
+		value += range_size * ((min - value) / range_size + 1);
+	}
+
+	return (min + (value - min) % range_size) as isize;
 }

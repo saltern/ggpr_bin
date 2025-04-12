@@ -203,6 +203,10 @@ impl SpriteImporter {
 		return Some(BinSprite::new_from_data(
 			// Pixels
 			PackedByteArray::from(data.pixels),
+			// Width
+			data.width,
+			// Height
+			data.height,
 			// Image
 			image,
 			// Color depth

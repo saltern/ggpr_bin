@@ -123,6 +123,8 @@ impl SpriteLoadSave {
 		match sprite_image {
 			Some(image) => return Some(BinSprite::new_from_data(
 				PackedByteArray::from(sprite_data.pixels),
+				sprite_data.width,
+				sprite_data.height,
 				image,
 				sprite_data.bit_depth,
 				PackedByteArray::from(sprite_data.palette)

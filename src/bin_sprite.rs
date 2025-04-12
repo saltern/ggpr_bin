@@ -97,6 +97,12 @@ pub struct BinSprite {
 	/// A [PackedByteArray] representing the raw pixel vector.
 	#[export]
 	pub pixels: PackedByteArray,
+	/// The sprite's width.
+	#[export]
+	pub width: u16,
+	/// The sprite's height.
+	#[export]
+	pub height: u16,
 	/// The base image loaded from a sprite.
 	#[export]
 	pub image: Option<Gd<Image>>,
@@ -118,6 +124,8 @@ impl IResource for BinSprite {
 		Self {
 			base,
 			pixels: PackedByteArray::from(vec![]),
+			width: 0,
+			height: 0,
 			image: None,
 			texture: None,
 			bit_depth: 8,
@@ -131,11 +139,16 @@ impl IResource for BinSprite {
 impl BinSprite {
 	/// Static constructor for BinSprites.
 	#[func]
-	pub fn new_from_data(pixels: PackedByteArray, image: Gd<Image>, bit_depth: u16, palette: PackedByteArray) -> Gd<Self> {
+	pub fn new_from_data(
+		pixels: PackedByteArray, width: u16, height: u16, image: Gd<Image>, bit_depth: u16,
+		palette: PackedByteArray
+	) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
 			Self {
 				base,
 				pixels,
+				width,
+				height,
 				texture: ImageTexture::create_from_image(&image),
 				image: Some(image),
 				bit_depth,

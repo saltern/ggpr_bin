@@ -3,6 +3,7 @@ use std::io::BufWriter;
 use std::fs;
 use std::path::PathBuf;
 use std::ops::Deref;
+use std::cmp::{min, max};
 use godot::classes::{Image, ImageTexture};
 use serde::Serialize;
 use serde::Deserialize;
@@ -10,6 +11,7 @@ use serde::Deserialize;
 use godot::prelude::*;
 use godot::classes::image::Format;
 use crate::bin_sprite::BinSprite;
+use crate::sprite_transform;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct CellJSONBox {
@@ -335,6 +337,7 @@ impl Cell {
 	}
 
 
+	/// Rebuilds the sprite from type 3/6 boxes if present. Otherwise, returns the texture as-is.
 	#[func] pub fn rebuild_sprite(&self, sprite: Gd<BinSprite>, visual_1: bool) -> Dictionary {
 		let mut region_vec: Vec<Gd<BoxInfo>> = Vec::new();
 
@@ -349,15 +352,26 @@ impl Cell {
 			}
 		}
 
+		let sprite_ref = sprite.bind();
+
+		// No regions. Return whole unmodified texture.
+		// Is cloning bad? Doesn't seem slow.
 		if region_vec.is_empty() {
-			return dict![];
+			let mut return_dict = Dictionary::new();
+			let mut single_dict = Dictionary::new();
+
+			single_dict.set("x_offset", 0);
+			single_dict.set("y_offset", 0);
+			single_dict.set("texture", sprite_ref.texture.clone());
+			return_dict.set(0, single_dict);
+
+			return return_dict;
 		}
 
 		// Results dictionary
 		let mut dictionary: Dictionary = Dictionary::new();
 
 		// Allocate pow2 texture like +R does...
-		let sprite_ref = sprite.bind();
 		let pow2_width = sprite_ref.width.next_power_of_two() as isize;
 		let pow2_height = sprite_ref.height.next_power_of_two() as isize;
 
@@ -380,6 +394,7 @@ impl Cell {
 			}
 		}
 
+		// Loop through region boxes
 		for region_id in 0..region_vec.len() {
 			let region = region_vec[region_id].bind();
 
@@ -408,6 +423,7 @@ impl Cell {
 			// Allocate target pixel vector
 			let mut pixel_vec: Vec<u8> = vec![0u8; region.width as usize * region.height as usize];
 
+			// Copy
 			for row in 0..region.height as isize {
 				for col in 0..region.width as isize {
 					let source_x = wrap(x_origin + col, 0, pow2_width - 1);
@@ -425,7 +441,8 @@ impl Cell {
 			}
 
 			let image: Gd<Image> = Image::create_from_data(
-				region.width as i32, region.height as i32, false, Format::L8, &PackedByteArray::from(pixel_vec)
+				region.width as i32, region.height as i32, false, Format::L8,
+				&PackedByteArray::from(pixel_vec)
 			).unwrap();
 
 			let texture: Gd<ImageTexture> = ImageTexture::create_from_image(&image).unwrap();
@@ -438,6 +455,194 @@ impl Cell {
 		}
 
 		return dictionary;
+	}
+
+
+	fn get_extents(&self, sprite: &Gd<BinSprite>) -> (isize, isize, isize, isize) {
+		let mut u: isize = isize::MAX;
+		let mut d: isize = isize::MIN;
+		let mut l: isize = isize::MAX;
+		let mut r: isize = isize::MIN;
+
+		let sprite_ref = sprite.bind();
+
+		let mut have_type_3: bool = false;
+
+		// Sprites are always offset (-128,-128)
+		let sprite_x = -128 + self.sprite_x_offset as isize;
+		let sprite_y = -128 + self.sprite_y_offset as isize;
+
+		// Hitboxes
+		for hitbox in self.boxes.iter_shared() {
+			let this_box = hitbox.bind();
+
+			let box_x = this_box.x_offset as isize;
+			let box_y = this_box.y_offset as isize;
+			let box_w = this_box.width as isize;
+			let box_h = this_box.height as isize;
+
+			if this_box.box_type == 3 || this_box.box_type == 6 {
+				have_type_3 = true;
+
+				let crop_x_offset = this_box.crop_x_offset as isize * 8;
+				let crop_y_offset = this_box.crop_y_offset as isize * 8;
+
+				let sprite_piece_x = box_x + crop_x_offset + sprite_x;
+				let sprite_piece_y = box_y + crop_y_offset + sprite_y;
+
+				// Factor in type 3/6 sprite pieces
+				u = min(u, sprite_piece_y);
+				d = max(d, sprite_piece_y + box_h);
+				l = min(l, sprite_piece_x);
+				r = max(r, sprite_piece_x + box_w)
+			}
+
+			u = min(u, box_y);
+			d = max(d, box_y + box_h);
+			l = min(l, box_x);
+			r = max(r, box_x + box_w);
+		}
+
+		// Sprite
+		if !have_type_3 {
+			u = min(u, sprite_y);
+			d = max(d, sprite_y + sprite_ref.height as isize);
+			l = min(l, sprite_x);
+			r = max(r, sprite_x + sprite_ref.width as isize);
+		}
+
+		return(u, d, l, r);
+	}
+
+
+	/// Saves the cell as a PNG snapshot.
+	#[func] pub fn save_snapshot_png(
+		&self, sprite: Gd<BinSprite>, palette: PackedByteArray, visual_1: bool,
+		box_colors: Array<Color>, box_thickness: i64, _path: String
+	) -> Option<Gd<Image>> {
+		let (min_y, max_y, min_x, max_x) = self.get_extents(&sprite);
+		let sprite_clone = sprite.clone();
+		let sprite_ref = sprite_clone.bind();
+		let sprite_pieces: Dictionary = self.rebuild_sprite(sprite, visual_1);
+
+		let image_w = max_x - min_x;
+		let image_h = max_y - min_y;
+
+		let mut pixel_vector: Vec<u8> = vec![0u8; (image_w * image_h * 4) as usize]; // RGBA; 4 channels
+
+		// Write sprite
+		for key in sprite_pieces.keys_array().iter_shared() {
+			let piece: Dictionary = sprite_pieces.at(key).to();
+			// "x_offset", "y_offset", "texture"
+
+			let mut at_x: i64 = piece.at("x_offset").to();
+			let mut at_y: i64 = piece.at("y_offset").to();
+			at_x += self.sprite_x_offset as i64 - 128 - min_x as i64;
+			at_y += self.sprite_y_offset as i64 - 128 - min_y as i64;
+
+			let piece_texture: Gd<ImageTexture> = piece.at("texture").to();
+			let piece_image: Gd<Image> = piece_texture.get_image().unwrap();
+			let piece_pixels: Vec<u8> = piece_image.get_data().to_vec();
+
+			let piece_w: usize = piece_texture.get_width() as usize;
+			let piece_h: usize = piece_texture.get_height() as usize;
+
+			for row in 0..piece_h {
+				for col in 0..piece_w {
+					let index: usize = row * piece_w + col;
+					let mut pal_index: u8 = piece_pixels[index];
+
+					if sprite_ref.bit_depth == 8 {
+						pal_index = sprite_transform::transform_index(pal_index);
+					}
+
+					pal_index *= 4;
+
+					let r: u8 = palette[(pal_index + 0) as usize];
+					let g: u8 = palette[(pal_index + 1) as usize];
+					let b: u8 = palette[(pal_index + 2) as usize];
+					let mut a: u8 = palette[(pal_index + 3) as usize];
+
+					if a < 128 {
+						a *= 2;
+					} else {
+						a = 255;
+					}
+
+					let at: usize = 4 * (
+						(at_y as usize + row) * image_w as usize + at_x as usize + col
+					);
+
+					pixel_vector[at + 0] = r;
+					pixel_vector[at + 1] = g;
+					pixel_vector[at + 2] = b;
+					pixel_vector[at + 3] = a;
+				}
+			}
+		}
+
+		// Write boxes
+		for hitbox in self.boxes.iter_shared() {
+			let hitbox_ref = hitbox.bind();
+			let this_color: Color = box_colors.at(hitbox_ref.box_type as usize);
+
+			let box_x = hitbox_ref.x_offset as isize - min_x;
+			let box_y = hitbox_ref.y_offset as isize - min_y;
+			let box_w = hitbox_ref.width as isize;
+			let box_h = hitbox_ref.height as isize;
+
+			for t in 0..box_thickness as isize {
+				// Top, bottom
+				for x in box_x..box_x + box_w {
+					let at_u = 4 * ((box_y + t) * image_w + x) as usize;
+					let at_d = 4 * ((box_y + box_h - 1 - t) * image_w + x) as usize;
+
+					pixel_vector[at_u + 0] = this_color.r8();
+					pixel_vector[at_u + 1] = this_color.g8();
+					pixel_vector[at_u + 2] = this_color.b8();
+					pixel_vector[at_u + 3] = this_color.a8();
+
+					pixel_vector[at_d + 0] = this_color.r8();
+					pixel_vector[at_d + 1] = this_color.g8();
+					pixel_vector[at_d + 2] = this_color.b8();
+					pixel_vector[at_d + 3] = this_color.a8();
+				}
+
+				// Left, right
+				for y in box_y..box_y + box_h {
+					let mod_y = y * image_w;
+					let at_l = 4 * (mod_y + box_x + t) as usize;
+					let at_r = 4 * (mod_y + box_x + box_w - 1 - t) as usize;
+
+					pixel_vector[at_l + 0] = this_color.r8();
+					pixel_vector[at_l + 1] = this_color.g8();
+					pixel_vector[at_l + 2] = this_color.b8();
+					pixel_vector[at_l + 3] = this_color.a8();
+
+					pixel_vector[at_r + 0] = this_color.r8();
+					pixel_vector[at_r + 1] = this_color.g8();
+					pixel_vector[at_r + 2] = this_color.b8();
+					pixel_vector[at_r + 3] = this_color.a8();
+				}
+			}
+
+
+			// Bottom
+		}
+
+		return Image::create_from_data(
+			image_w as i32, image_h as i32, false, Format::RGBA8,
+			&PackedByteArray::from(pixel_vector)
+		);
+	}
+
+
+	/// Saves the cell as a PSD snapshot.
+	#[func] pub fn save_snapshot_psd(
+		&self, _sprite: Gd<BinSprite>, _pal: PackedByteArray, _visual_1: bool,
+		_box_colors: Array<Color>, _path: String
+	) {
+		//let (min_y, max_y, min_x, max_x) = self.get_extents(&sprite);
 	}
 }
 

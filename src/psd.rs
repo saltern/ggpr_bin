@@ -144,12 +144,7 @@ fn generate_layer_extra_data(name: &str) -> Vec<u8> {
 
 	extra_data.extend(00u32.to_be_bytes());		// Mask data length
 	extra_data.extend(00u32.to_be_bytes());		// Blending ranges length
-/*
-	// Blending ranges
-	for _i in 0..10 {
-		extra_data.extend(&[0x00, 0x00, 0xFF, 0xFF]);
-	}
-*/
+
 	// Layer name
 	let name_len: usize = name.len() + 1;
 
@@ -202,7 +197,7 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 		while column < width {
 			let limit = min(127, width - column) as u8;
 
-			// Token scan (adds 2 to row_length for every token registered)
+			// Token scan
 			{
 				let mut token_length: u8 = 0;
 				let at: usize = (from + column) as usize;
@@ -223,7 +218,7 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 				}
 			}
 
-			// Literal scan (adds literal_length + 1 to row_length)
+			// Literal scan
 			{
 				let mut literal_length: u8 = 0;
 				let mut match_length: u8 = 0;

@@ -17,6 +17,7 @@ pub mod sprite_transform;
 
 // Generic
 pub mod sort;
+pub mod psd;
 
 struct GGPRBin;
 

@@ -56,8 +56,7 @@ pub fn make_psd(image_w: isize, image_h: isize, layers: Vec<(&str, Vec<u8>)>, pa
 	let _ = buffer.write_all(generate_layer_and_mask_info(image_w, image_h, layers).as_slice());
 
 	// Fake composite
-	let comp_size: usize = 3 * (image_w * image_h) as usize;
-	let _ = buffer.write_all(vec![0u8; comp_size].as_slice());
+	let _ = buffer.write_all(generate_fake_composite(image_w, image_h).as_slice());
 
 	// Finish up
 	let _ = buffer.flush();
@@ -256,10 +255,50 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 		lengths.extend(row_length.to_be_bytes());
 	}
 
-	rle_data.push(0x00);
-	rle_data.push(0x01);
+	rle_data.extend(1u16.to_be_bytes());
 	rle_data.extend(lengths);
 	rle_data.extend(packets);
 
 	return rle_data;
+}
+
+
+fn generate_fake_composite(width: isize, height: isize) -> Vec<u8> {
+	let mut fake_composite: Vec<u8> = Vec::new();
+
+	// Compression mode
+	fake_composite.extend(1u16.to_be_bytes());
+
+	let full_tokens: isize = width / 128;
+	let remainder: isize = width - (128 * full_tokens);
+	let mut row_length: u16 = 2 * full_tokens as u16;
+
+	if remainder > 0 {
+		row_length += 2;
+	}
+
+	// Counts
+	for _scanline in 0..3 * height as usize {
+		fake_composite.extend(row_length.to_be_bytes());
+	}
+
+	// RLE Data
+	for _channel in 0..3 {
+		for _scanline in 0..height as usize {
+			for _token in 0..full_tokens {
+				fake_composite.push(-127i8 as u8);
+				fake_composite.push(0x00);
+			}
+
+			if remainder == 1 {
+				fake_composite.push(0u8);
+			} else {
+				fake_composite.push(-(remainder - 1) as u8);
+			}
+
+			fake_composite.push(0u8);
+		}
+	}
+
+	return fake_composite;
 }

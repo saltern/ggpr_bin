@@ -281,7 +281,7 @@ fn compress_channel(pixels: &Vec<u8>, rect: (i32, i32, i32, i32)) -> Vec<u8> {
 
 fn generate_fake_composite(width: i32, height: i32) -> Vec<u8> {
 	let mut fake_composite: Vec<u8> = Vec::new();
-
+	
 	// Compression mode
 	fake_composite.extend(1u16.to_be_bytes());
 
@@ -306,10 +306,10 @@ fn generate_fake_composite(width: i32, height: i32) -> Vec<u8> {
 				fake_composite.push(0x00);
 			}
 
-			if remainder == 1 {
-				fake_composite.push(0u8);
-			} else {
-				fake_composite.push(-(remainder - 1) as u8);
+			match remainder {
+				0 => continue,
+				1 => fake_composite.push(0u8),
+				_ => fake_composite.push(-(remainder - 1) as u8),
 			}
 
 			fake_composite.push(0u8);

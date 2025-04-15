@@ -687,7 +687,7 @@ impl Cell {
 
 		let at_x = -min_x - origin_offset;
 		let at_y = -min_y - origin_offset;
-		
+
 		for row in 0..origin_w {
 			for col in 0..origin_w {
 				let from = 1 + 4 * (row * origin_w + col) as usize;
@@ -706,7 +706,7 @@ impl Cell {
 			}
 		}
 
-		return (input_layer, (at_x, at_y, at_x + origin_w, at_y + origin_w));
+		return (input_layer, (at_y, at_y + origin_w, at_x, at_x + origin_w));
 	}
 	
 
@@ -791,7 +791,7 @@ impl Cell {
 		);
 
 		layer_vector.push(("Sprite", sprite_layer, sprite_rect));
-		
+
 		// Boxes, one layer per visible type
 		for box_type_id in 0..box_display_types.len() {
 			// Skip disabled types
@@ -821,7 +821,7 @@ impl Cell {
 				this_layer, min_x, min_y, image_w,
 				&self.boxes, current_display_array, &box_colors, box_thickness
 			);
-			
+
 			let this_layer = layer_data.0;
 
 			// No boxes were drawn
@@ -829,7 +829,7 @@ impl Cell {
 				continue;
 			}
 
-			layer_vector.push((layer_name, this_layer, ( 
+			layer_vector.push((layer_name, this_layer, (
 				layer_data.2.0,
 				layer_data.2.1,
 				layer_data.2.2,
@@ -845,7 +845,7 @@ impl Cell {
 			(origin_layer, origin_rect) = Self::layer_write_origin(
 				origin_layer, min_x, min_y, image_w, origin
 			);
-			
+
 			layer_vector.push(("Origin point", origin_layer, origin_rect));
 		}
 

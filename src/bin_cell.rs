@@ -462,34 +462,34 @@ impl Cell {
 
 	fn get_extents(
 		&self, sprite: &Gd<BinSprite>, box_types: &Array<bool>, origin: &PackedByteArray,
-	) -> (isize, isize, isize, isize) {
-		let mut u: isize = isize::MAX;
-		let mut d: isize = isize::MIN;
-		let mut l: isize = isize::MAX;
-		let mut r: isize = isize::MIN;
+	) -> (i32, i32, i32, i32) {
+		let mut u = i32::MAX;
+		let mut d = i32::MIN;
+		let mut l = i32::MAX;
+		let mut r = i32::MIN;
 
 		let sprite_ref = sprite.bind();
 
 		let mut have_type_3: bool = false;
 
 		// Sprites are always offset (-128,-128)
-		let sprite_x = -128 + self.sprite_x_offset as isize;
-		let sprite_y = -128 + self.sprite_y_offset as isize;
+		let sprite_x = -128 + self.sprite_x_offset as i32;
+		let sprite_y = -128 + self.sprite_y_offset as i32;
 
 		// Hitboxes
 		for hitbox in self.boxes.iter_shared() {
 			let this_box = hitbox.bind();
 
-			let box_x = this_box.x_offset as isize;
-			let box_y = this_box.y_offset as isize;
-			let box_w = this_box.width as isize;
-			let box_h = this_box.height as isize;
+			let box_x = this_box.x_offset as i32;
+			let box_y = this_box.y_offset as i32;
+			let box_w = this_box.width as i32;
+			let box_h = this_box.height as i32;
 
 			if this_box.box_type == 3 || this_box.box_type == 6 {
 				have_type_3 = true;
 
-				let crop_x_offset = this_box.crop_x_offset as isize * 8;
-				let crop_y_offset = this_box.crop_y_offset as isize * 8;
+				let crop_x_offset = this_box.crop_x_offset as i32 * 8;
+				let crop_y_offset = this_box.crop_y_offset as i32 * 8;
 
 				let sprite_piece_x = box_x + crop_x_offset + sprite_x;
 				let sprite_piece_y = box_y + crop_y_offset + sprite_y;
@@ -516,14 +516,14 @@ impl Cell {
 		// Sprite
 		if !have_type_3 {
 			u = min(u, sprite_y);
-			d = max(d, sprite_y + sprite_ref.height as isize);
+			d = max(d, sprite_y + sprite_ref.height as i32);
 			l = min(l, sprite_x);
-			r = max(r, sprite_x + sprite_ref.width as isize);
+			r = max(r, sprite_x + sprite_ref.width as i32);
 		}
 
 		// Origin
 		if !origin.is_empty() {
-			let origin_w = origin[0] as isize;
+			let origin_w = origin[0] as i32;
 			let origin_offset = origin_w / 2;
 			d = max(d, origin_offset + 1);
 			r = max(r, origin_offset + 1);
@@ -534,41 +534,52 @@ impl Cell {
 
 
 	fn layer_write_sprite(
-		mut input_layer: Vec<u8>, min_x: isize, min_y: isize, image_w: isize,
-		sprite_pieces: Dictionary, sprite_x: i16, sprite_y: i16, bit_depth: u16,
+		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
+		sprite_pieces: Dictionary, sprite_x: i32, sprite_y: i32, bit_depth: u16,
 		palette: PackedByteArray
-	) -> Vec<u8> {
+	) -> (Vec<u8>, (i32, i32, i32, i32)) {
+		// Extents for PSD layer rect
+		let mut u = i32::MAX;
+		let mut d = i32::MIN;
+		let mut l = i32::MAX;
+		let mut r = i32::MIN;
+
 		for key in sprite_pieces.keys_array().iter_shared() {
 			let piece: Dictionary = sprite_pieces.at(key).to();
 			// "x_offset", "y_offset", "texture"
 
-			let mut at_x: i64 = piece.at("x_offset").to();
-			let mut at_y: i64 = piece.at("y_offset").to();
-			at_x += sprite_x as i64 - 128 - min_x as i64;
-			at_y += sprite_y as i64 - 128 - min_y as i64;
+			let mut at_x: i32 = piece.at("x_offset").to();
+			let mut at_y: i32 = piece.at("y_offset").to();
+			at_x += sprite_x - 128 - min_x;
+			at_y += sprite_y - 128 - min_y;
 
 			let piece_texture: Gd<ImageTexture> = piece.at("texture").to();
 			let piece_image: Gd<Image> = piece_texture.get_image().unwrap();
 			let piece_pixels: Vec<u8> = piece_image.get_data().to_vec();
 
-			let piece_w = piece_texture.get_width() as isize;
-			let piece_h = piece_texture.get_height() as isize;
+			let piece_w = piece_texture.get_width();
+			let piece_h = piece_texture.get_height();
+
+			u = min(u, at_y);
+			d = max(d, at_y + piece_h);
+			l = min(l, at_x);
+			r = max(r, at_x + piece_w);
 
 			for row in 0..piece_h {
 				for col in 0..piece_w {
 					let index = row * piece_w + col;
-					let mut pal_index: usize = piece_pixels[index as usize] as usize;
+					let mut pal_index = piece_pixels[index as usize];
 
 					if bit_depth == 8 {
-						pal_index = sprite_transform::transform_index(pal_index as u8) as usize;
+						pal_index = sprite_transform::transform_index(pal_index);
 					}
 
 					pal_index *= 4;
 
-					let r: u8 = palette[pal_index + 0];
-					let g: u8 = palette[pal_index + 1];
-					let b: u8 = palette[pal_index + 2];
-					let mut a: u8 = palette[pal_index + 3];
+					let r = palette[(pal_index + 0) as usize];
+					let g = palette[(pal_index + 1) as usize];
+					let b = palette[(pal_index + 2) as usize];
+					let mut a = palette[(pal_index + 3) as usize];
 
 					if a < 128 {
 						a *= 2;
@@ -577,7 +588,7 @@ impl Cell {
 					}
 
 					let at = 4 * (
-						(at_y as isize + row) * image_w + at_x as isize + col
+						(at_y + row) * image_w + at_x + col
 					) as usize;
 
 					input_layer[at + 0] = r;
@@ -588,16 +599,21 @@ impl Cell {
 			}
 		}
 
-		return input_layer;
+		return (input_layer, (u, d, l, r));
 	}
 
 
 	fn layer_write_boxes(
-		mut input_layer: Vec<u8>, min_x: isize, min_y: isize, image_w: isize,
+		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
 		boxes: &Array<Gd<BoxInfo>>, box_display_types: Array<bool>,
-		box_colors: &Array<Color>, box_thickness: i64
-	) -> (Vec<u8>, usize) {
+		box_colors: &Array<Color>, box_thickness: i32
+	) -> (Vec<u8>, usize, (i32, i32, i32, i32)) {
 		let mut boxes_written: usize = 0;
+		// Extents for PSD layer rect
+		let mut u = i32::MAX;
+		let mut d = i32::MIN;
+		let mut l = i32::MAX;
+		let mut r = i32::MIN;
 
 		for hitbox in boxes.iter_shared() {
 			let hitbox_ref = hitbox.bind();
@@ -611,12 +627,17 @@ impl Cell {
 
 			let this_color: Color = box_colors.at(hitbox_ref.box_type as usize);
 
-			let box_x = hitbox_ref.x_offset as isize - min_x;
-			let box_y = hitbox_ref.y_offset as isize - min_y;
-			let box_w = hitbox_ref.width as isize;
-			let box_h = hitbox_ref.height as isize;
+			let box_x = hitbox_ref.x_offset as i32 - min_x;
+			let box_y = hitbox_ref.y_offset as i32 - min_y;
+			let box_w = hitbox_ref.width as i32;
+			let box_h = hitbox_ref.height as i32;
 
-			for t in 0..box_thickness as isize {
+			u = min(u, box_y);
+			d = max(d, box_y + box_h);
+			l = min(l, box_x);
+			r = max(r, box_x + box_w);
+
+			for t in 0..box_thickness {
 				// Top, bottom
 				for x in box_x..box_x + box_w {
 					let at_u = 4 * ((box_y + t) * image_w + x) as usize;
@@ -652,21 +673,21 @@ impl Cell {
 			}
 		}
 
-		return (input_layer, boxes_written);
+		return (input_layer, boxes_written, (u, d, l, r));
 	}
 
 
 	fn layer_write_origin(
-		mut input_layer: Vec<u8>, min_x: isize, min_y: isize, image_w: isize,
+		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
 		origin: PackedByteArray
-	) -> Vec<u8> {
-		let origin_w = origin[0] as isize;
+	) -> (Vec<u8>, (i32, i32, i32, i32)) {
+		let origin_w = origin[0] as i32;
 		let origin_pixels: Vec<u8> = origin.to_vec();
-		let origin_offset: isize = (origin_w - 1) / 2;
+		let origin_offset = (origin_w - 1) / 2;
 
 		let at_x = -min_x - origin_offset;
 		let at_y = -min_y - origin_offset;
-
+		
 		for row in 0..origin_w {
 			for col in 0..origin_w {
 				let from = 1 + 4 * (row * origin_w + col) as usize;
@@ -685,7 +706,7 @@ impl Cell {
 			}
 		}
 
-		return input_layer;
+		return (input_layer, (at_x, at_y, at_x + origin_w, at_y + origin_w));
 	}
 	
 
@@ -694,7 +715,7 @@ impl Cell {
 		// Sprite params
 		&self, sprite: Gd<BinSprite>, palette: PackedByteArray, visual_1: bool,
 		// Box params
-		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i64,
+		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i32,
 		// Origin point params
 		origin: PackedByteArray,
 		// Save path
@@ -714,9 +735,9 @@ impl Cell {
 		// Write sprite
 		pixel_vector = Self::layer_write_sprite(
 			pixel_vector, min_x, min_y, image_w,
-			sprite_pieces, self.sprite_x_offset, self.sprite_y_offset, sprite_ref.bit_depth,
-			palette
-		);
+			sprite_pieces, self.sprite_x_offset as i32, self.sprite_y_offset as i32,
+			sprite_ref.bit_depth, palette
+		).0;
 
 		// Write boxes
 		pixel_vector = Self::layer_write_boxes(
@@ -726,12 +747,11 @@ impl Cell {
 
 		// Write origin cross
 		if !origin.is_empty() {
-			pixel_vector = Self::layer_write_origin(pixel_vector, min_x, min_y, image_w, origin);
+			pixel_vector = Self::layer_write_origin(pixel_vector, min_x, min_y, image_w, origin).0;
 		}
 
 		let result = Image::create_from_data(
-			image_w as i32, image_h as i32, false, Format::RGBA8,
-			&PackedByteArray::from(pixel_vector)
+			image_w, image_h, false, Format::RGBA8, &PackedByteArray::from(pixel_vector)
 		).unwrap();
 
 		result.save_png(path.into_arg());
@@ -743,7 +763,7 @@ impl Cell {
 		// Sprite params
 		&self, sprite: Gd<BinSprite>, palette: PackedByteArray, visual_1: bool,
 		// Box params
-		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i64,
+		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i32,
 		// Origin point params
 		origin: PackedByteArray,
 		// Save path
@@ -758,19 +778,20 @@ impl Cell {
 		let image_h = max_y - min_y;
 
 		// Layers
-		let mut layer_vector: Vec<(&str, Vec<u8>)> = Vec::new();
+		let mut layer_vector: Vec<(&str, Vec<u8>, (i32, i32, i32, i32))> = Vec::new();
 		let layer_size = (4 * image_w * image_h) as usize;
 
 		// Sprite
 		let mut sprite_layer: Vec<u8> = vec![0u8; layer_size];
-		sprite_layer = Self::layer_write_sprite(
+		let sprite_rect: (i32, i32, i32, i32);
+		(sprite_layer, sprite_rect) = Self::layer_write_sprite(
 			sprite_layer, min_x, min_y, image_w,
-			sprite_pieces, self.sprite_x_offset, self.sprite_y_offset, sprite_ref.bit_depth,
-			palette
+			sprite_pieces, self.sprite_x_offset as i32, self.sprite_y_offset as i32,
+			sprite_ref.bit_depth, palette
 		);
 
-		layer_vector.push(("Sprite", sprite_layer));
-
+		layer_vector.push(("Sprite", sprite_layer, sprite_rect));
+		
 		// Boxes, one layer per visible type
 		for box_type_id in 0..box_display_types.len() {
 			// Skip disabled types
@@ -796,23 +817,36 @@ impl Cell {
 				_ => layer_name = "Unknown type boxes"
 			}
 
-			let (this_layer, box_count) = Self::layer_write_boxes(
+			let layer_data = Self::layer_write_boxes(
 				this_layer, min_x, min_y, image_w,
 				&self.boxes, current_display_array, &box_colors, box_thickness
 			);
+			
+			let this_layer = layer_data.0;
 
-			if box_count == 0 {
+			// No boxes were drawn
+			if layer_data.1 == 0 {
 				continue;
 			}
 
-			layer_vector.push((layer_name, this_layer));
+			layer_vector.push((layer_name, this_layer, ( 
+				layer_data.2.0,
+				layer_data.2.1,
+				layer_data.2.2,
+				layer_data.2.3)
+			));
 		}
 
 		// Origin point
 		if !origin.is_empty() {
 			let mut origin_layer: Vec<u8> = vec![0u8; layer_size];
-			origin_layer = Self::layer_write_origin(origin_layer, min_x, min_y, image_w, origin);
-			layer_vector.push(("Origin point", origin_layer));
+			let origin_rect: (i32, i32, i32, i32);
+
+			(origin_layer, origin_rect) = Self::layer_write_origin(
+				origin_layer, min_x, min_y, image_w, origin
+			);
+			
+			layer_vector.push(("Origin point", origin_layer, origin_rect));
 		}
 
 		// Have all layers

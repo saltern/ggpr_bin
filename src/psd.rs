@@ -28,7 +28,9 @@ const IMAGE_RESOURCES: [u8; 4] = [
 ];
 
 
-pub fn make_psd(image_w: isize, image_h: isize, layers: Vec<(&str, Vec<u8>)>, path: String) {
+pub fn make_psd(
+	image_w: i32, image_h: i32, layers: Vec<(&str, Vec<u8>, (i32, i32, i32, i32))>, path: String
+) {
 	let file: File;
 
 	match File::create(path) {
@@ -63,7 +65,9 @@ pub fn make_psd(image_w: isize, image_h: isize, layers: Vec<(&str, Vec<u8>)>, pa
 }
 
 
-fn generate_layer_and_mask_info(w: isize, h: isize, layers: Vec<(&str, Vec<u8>)>) -> Vec<u8> {
+fn generate_layer_and_mask_info(
+	w: i32, h: i32, layers: Vec<(&str, Vec<u8>, (i32, i32, i32, i32))>
+) -> Vec<u8> {
 	let mut layer_and_mask_info: Vec<u8> = Vec::new();
 
 	let layer_info: Vec<u8> = generate_layer_info(w, h, layers);
@@ -75,15 +79,17 @@ fn generate_layer_and_mask_info(w: isize, h: isize, layers: Vec<(&str, Vec<u8>)>
 }
 
 
-fn generate_layer_info(w: isize, h: isize, layers: Vec<(&str, Vec<u8>)>) -> Vec<u8> {
+fn generate_layer_info(
+	w: i32, h: i32, layers: Vec<(&str, Vec<u8>, (i32, i32, i32, i32))>
+) -> Vec<u8> {
 	let mut layer_info: Vec<u8> = Vec::new();
 	let mut info_chunk: Vec<u8> = Vec::new();
 	let mut layer_records: Vec<u8> = Vec::new();
 	let mut pixel_data: Vec<u8> = Vec::new();
 
 	for layer in layers.iter() {
-		let channels_data = generate_pixel_data(w, h, &layer.1);
-		layer_records.extend(generate_layer_record(layer.0, w, h, channels_data.1));
+		let channels_data = generate_pixel_data(w, h, &layer.1, layer.2);
+		layer_records.extend(generate_layer_record(layer.0, layer.2, channels_data.1));
 		pixel_data.extend(channels_data.0);
 	}
 
@@ -104,14 +110,16 @@ fn generate_layer_info(w: isize, h: isize, layers: Vec<(&str, Vec<u8>)>) -> Vec<
 }
 
 
-fn generate_layer_record(name: &str, width: isize, height: isize, channel_length: Vec<usize>) -> Vec<u8> {
+fn generate_layer_record(
+	name: &str, rect: (i32, i32, i32, i32), channel_length: Vec<usize>
+) -> Vec<u8> {
 	let mut layer_record: Vec<u8> = Vec::new();
 
 	// Boundaries: top, left, down, right
-	layer_record.extend(0u32.to_be_bytes());
-	layer_record.extend(0u32.to_be_bytes());
-	layer_record.extend((height as u32).to_be_bytes());
-	layer_record.extend((width as u32).to_be_bytes());
+	layer_record.extend(rect.0.to_be_bytes());
+	layer_record.extend(rect.2.to_be_bytes());
+	layer_record.extend(rect.1.to_be_bytes());
+	layer_record.extend(rect.3.to_be_bytes());
 
 	// Channel count
 	layer_record.extend(4u16.to_be_bytes());
@@ -162,20 +170,28 @@ fn generate_layer_extra_data(name: &str) -> Vec<u8> {
 }
 
 
-fn generate_pixel_data(width: isize, height: isize, pixels: &Vec<u8>) -> (Vec<u8>, Vec<usize>) {
+fn generate_pixel_data(
+	width: i32, height: i32, pixels: &Vec<u8>, rect: (i32, i32, i32, i32)
+) -> (Vec<u8>, Vec<usize>) {
 	let mut pixel_data: Vec<u8> = Vec::new();
 
 	let channel_order: Vec<usize> = vec![3, 0, 1, 2];
 	let mut channel_sizes: Vec<usize> = Vec::with_capacity(4);
 
+	// A, R, G, B
 	for channel in channel_order.iter() {
 		let mut channel_pixels: Vec<u8> = Vec::with_capacity((width * height) as usize);
 
-		for pixel in 0..(width * height) as usize {
-			channel_pixels.push(pixels[(4 * pixel) + channel]);
+		// Build pixel vector for this channel
+		for row in rect.0..rect.1 {
+			for col in rect.2..rect.3 {
+				let pixel = (row * width + col) as usize;
+				channel_pixels.push(pixels[(4 * pixel) + channel])
+			}
 		}
 
-		let rle_data = compress_channel(width, height, &channel_pixels);
+		// Compress and append this channel
+		let rle_data = compress_channel(&channel_pixels, rect);
 		channel_sizes.push(rle_data.len());
 		pixel_data.extend(rle_data);
 	}
@@ -184,35 +200,40 @@ fn generate_pixel_data(width: isize, height: isize, pixels: &Vec<u8>) -> (Vec<u8
 }
 
 
-fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
+fn compress_channel(pixels: &Vec<u8>, rect: (i32, i32, i32, i32)) -> Vec<u8> {
 	let mut rle_data: Vec<u8> = Vec::new();
 	let mut lengths: Vec<u8> = Vec::new();	// stores be u16s
 	let mut packets: Vec<u8> = Vec::new();
 
-	for row in 0..height {
-		let mut row_length: u16 = 0;
-		let from = row * width;
-		let mut column: isize = 0;
+	let rect_w = rect.3 - rect.2;
+	let rect_h = rect.1 - rect.0;
 
-		while column < width {
-			let limit = min(127, width - column) as u8;
+	// Scan layer rect height
+	for row in 0..rect_h {
+		let mut row_length: u16 = 0;
+		let from = row * rect_w;
+		let mut column: i32 = 0;
+
+		while column < rect_w {
+			let limit = min(127, rect_w - column);
 
 			// Token scan
 			{
-				let mut token_length: u8 = 0;
-				let at: usize = (from + column) as usize;
+				let mut token_length: i32 = 0;
+				let at = (from + column) as usize;
 				let token_pixel: u8 = pixels[at];
 
-				while pixels[at + token_length as usize] == token_pixel && token_length < limit - 1 {
+				while pixels[at + token_length as usize] == token_pixel && token_length < limit - 1
+				{
 					token_length += 1;
 				}
 
 				// Register token if at least 2 pixels long.
 				if token_length >= 2 {
-					let header_byte = -(token_length as i16 - 1) as i8;
+					let header_byte = -(token_length - 1) as i8;
 					packets.push(header_byte as u8);
 					packets.push(token_pixel);
-					column += token_length as isize;
+					column += token_length;
 					row_length += 2;
 					continue;
 				}
@@ -220,7 +241,7 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 
 			// Literal scan
 			{
-				let mut literal_length: u8 = 0;
+				let mut literal_length: i32 = 0;
 				let mut match_length: u8 = 0;
 				let at: usize = (from + column) as usize;
 				let mut last_match: u8 = pixels[at];
@@ -241,9 +262,9 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 				}
 
 				// Register literal
-				packets.push(literal_length - 1);
+				packets.push((literal_length - 1) as u8);
 				packets.extend(literal);
-				column += literal_length as isize;
+				column += literal_length;
 				row_length += literal_length as u16 + 1;
 			}
 		}
@@ -258,14 +279,14 @@ fn compress_channel(width: isize, height: isize, pixels: &Vec<u8>) -> Vec<u8> {
 }
 
 
-fn generate_fake_composite(width: isize, height: isize) -> Vec<u8> {
+fn generate_fake_composite(width: i32, height: i32) -> Vec<u8> {
 	let mut fake_composite: Vec<u8> = Vec::new();
 
 	// Compression mode
 	fake_composite.extend(1u16.to_be_bytes());
 
-	let full_tokens: isize = width / 128;
-	let remainder: isize = width - (128 * full_tokens);
+	let full_tokens = width / 128;
+	let remainder = width - (128 * full_tokens);
 	let mut row_length: u16 = 2 * full_tokens as u16;
 
 	if remainder > 0 {

@@ -124,6 +124,7 @@ pub fn identify_sprite(bin_data: &Vec<u8>) -> bool {
 
 
 pub fn identify_sprite_list_select(bin_data: &Vec<u8>) -> bool {
+	// Checks first sprite only
 	if !identify_sprite_list(bin_data) {
 		return false;
 	}
@@ -131,8 +132,18 @@ pub fn identify_sprite_list_select(bin_data: &Vec<u8>) -> bool {
 	let header_pointers: Vec<usize> = get_pointers(bin_data, 0x00, false);
 	
 	// Check bitmask
-	let header_last: usize = header_pointers[header_pointers.len() - 1];
-	let bitmask: Vec<u8> = bin_data[header_last..].to_vec();
+	let pointer_select: usize;
+	let bitmask_end: usize;
+	
+	if header_pointers.len() > 179 {
+		pointer_select = header_pointers[178];
+		bitmask_end = header_pointers[179];
+	} else {
+		pointer_select = header_pointers[header_pointers.len() - 1];
+		bitmask_end = bin_data.len();
+	}
+	
+	let bitmask: Vec<u8> = bin_data[pointer_select..bitmask_end].to_vec();
 	
 	let bitmask_w: u32 = u32::from_le_bytes([
 		bitmask[0x00], bitmask[0x01],

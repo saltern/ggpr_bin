@@ -1227,17 +1227,17 @@ impl BinResource {
 		while data_vector.len() % 0x10 != 0 {
 			data_vector.push(0xFF);
 		}
-		
+
 		// Add back sprites
 		if sprites_b.len() > 0 {
 			let back_sprite_block = Self::get_sprite_block(
 				sprites_b, data_vector.len() as u32, global_signals
 			);
-			
+
 			header_pointers.extend(back_sprite_block.0);
 			data_vector.extend(back_sprite_block.1);
 		}
-		
+
 		// ...AND after. Important.
 		while data_vector.len() % 0x10 != 0 {
 			data_vector.push(0xFF);

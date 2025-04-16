@@ -4,6 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
+use std::cmp::min;
 
 use godot::prelude::*;
 
@@ -344,11 +345,11 @@ impl BinResource {
 		for object in 0..objects.len() {
 			let object_bin_data: &Vec<u8> = &objects[object];
 			let mut dictionary: Dictionary;
-			
+
 			// Get and load per object type
 			match identify_object(&object_bin_data) {
-			
-			
+
+
 				ObjectType::Sprite => {
 					let sprite = SpriteLoadSave::load_sprite_data(object_bin_data);
 					let mut array: Array<Gd<BinSprite>> = Array::new();
@@ -374,27 +375,39 @@ impl BinResource {
 				
 				
 				ObjectType::SpriteListSelect => {
+					// TODO: Reserve pointer #178 for the cursor mask pointer.
+					// Check the size of the sprite array. If larger than 179, extract pointer #178
+					// and store it as the cursor mask. Load any pointers before and after it as
+					// sprites, and #178 itself as the cursor mask.
+
 					let pointers: Vec<usize> = get_pointers(object_bin_data, 0x00, false);
-					let last_pointer = pointers[pointers.len() - 1];
+					let pointer_select: usize;
+					let select_pos: usize = min(178, pointers.len() - 1);
+
+					pointer_select = pointers[select_pos];
+
 					let mut sprites = Self::load_sprite_list(object_bin_data, 0);
-					let _ = sprites.pop();
+					sprites.remove(select_pos);
 					
 					let select_w = u32::from_le_bytes([
-						object_bin_data[last_pointer + 0x00],
-						object_bin_data[last_pointer + 0x01],
-						object_bin_data[last_pointer + 0x02],
-						object_bin_data[last_pointer + 0x03],
+						object_bin_data[pointer_select + 0x00],
+						object_bin_data[pointer_select + 0x01],
+						object_bin_data[pointer_select + 0x02],
+						object_bin_data[pointer_select + 0x03],
 					]);
 					
 					let select_h = u32::from_le_bytes([
-						object_bin_data[last_pointer + 0x04],
-						object_bin_data[last_pointer + 0x05],
-						object_bin_data[last_pointer + 0x06],
-						object_bin_data[last_pointer + 0x07],
+						object_bin_data[pointer_select + 0x04],
+						object_bin_data[pointer_select + 0x05],
+						object_bin_data[pointer_select + 0x06],
+						object_bin_data[pointer_select + 0x07],
 					]);
 					
 					let select_pixels = PackedByteArray::from(
-						object_bin_data[last_pointer + 0x08..last_pointer + 0x08 + (select_w * select_h) as usize].to_vec());
+						object_bin_data[
+							pointer_select + 0x08..pointer_select + 0x08 +
+							(select_w * select_h) as usize].to_vec()
+					);
 					
 					dictionary = dict! {
 						"type": "sprite_list_select",
@@ -1169,19 +1182,34 @@ impl BinResource {
 		 */
 		
 		/* Data format:
-		 * 178 u32 pointers, last is select
+		 * 179 u32 pointers, last is select
 		 * select:
 		 * 		u32 width
 		 *		u32 height
 		 *		Vec<u8> raw pixel array
 		 */
-		
-		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
-		
+
+		// TODO: Wrap sprites around a fixed #178 cursor mask pointer.
+		// Check the size of sprite array. If larger than 178, send excess to second array.
+		// Then save the first sprite block, then the select mask, then the second block.
+		// Additionally: don't allow the user to have less than 178 sprites from the front end.
+		let sprites: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
+		let sprites_a: Array<Gd<BinSprite>>; //dictionary.at("sprites").to();
+		let sprites_b: Array<Gd<BinSprite>>;
+
+		if sprites.len() > 178 {
+			sprites_a = sprites.subarray_shallow(0, 178, None);
+			sprites_b = sprites.subarray_shallow(178, sprites.len(), None);
+		} else {
+			sprites_a = sprites;
+			sprites_b = array![];
+		}
+
 		let mut header_pointers: Vec<u32>;
 		let mut data_vector: Vec<u8>;
+
 		(header_pointers, data_vector) = Self::get_sprite_block(
-			sprite_array, 0x00, global_signals
+			sprites_a, 0x00, global_signals
 		);
 		
 		// Add select pointer
@@ -1194,7 +1222,23 @@ impl BinResource {
 		data_vector.extend(select_width.to_le_bytes());
 		data_vector.extend(select_height.to_le_bytes());
 		data_vector.extend(select_pixels.to_vec());
+
+		// Pad select cursor mask before adding back sprites
+		while data_vector.len() % 0x10 != 0 {
+			data_vector.push(0xFF);
+		}
 		
+		// Add back sprites
+		if sprites_b.len() > 0 {
+			let back_sprite_block = Self::get_sprite_block(
+				sprites_b, data_vector.len() as u32, global_signals
+			);
+			
+			header_pointers.extend(back_sprite_block.0);
+			data_vector.extend(back_sprite_block.1);
+		}
+		
+		// ...AND after. Important.
 		while data_vector.len() % 0x10 != 0 {
 			data_vector.push(0xFF);
 		}

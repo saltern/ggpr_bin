@@ -375,11 +375,7 @@ impl BinResource {
 				
 				
 				ObjectType::SpriteListSelect => {
-					// TODO: Reserve pointer #178 for the cursor mask pointer.
-					// Check the size of the sprite array. If larger than 179, extract pointer #178
-					// and store it as the cursor mask. Load any pointers before and after it as
-					// sprites, and #178 itself as the cursor mask.
-
+					// Load sprites around select screen cursor bitmask
 					let pointers: Vec<usize> = get_pointers(object_bin_data, 0x00, false);
 					let pointer_select: usize;
 					let select_pos: usize = min(178, pointers.len() - 1);
@@ -1189,12 +1185,9 @@ impl BinResource {
 		 *		Vec<u8> raw pixel array
 		 */
 
-		// TODO: Wrap sprites around a fixed #178 cursor mask pointer.
-		// Check the size of sprite array. If larger than 178, send excess to second array.
-		// Then save the first sprite block, then the select mask, then the second block.
-		// Additionally: don't allow the user to have less than 178 sprites from the front end.
+		// Wrap sprites around select screen cursor bitmask
 		let sprites: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
-		let sprites_a: Array<Gd<BinSprite>>; //dictionary.at("sprites").to();
+		let sprites_a: Array<Gd<BinSprite>>;
 		let sprites_b: Array<Gd<BinSprite>>;
 
 		if sprites.len() > 178 {

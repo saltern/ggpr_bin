@@ -222,10 +222,9 @@ impl BinPalette {
 	#[func]
 	pub fn to_act_file(&self, path: String) {
 		let path_buf: PathBuf = PathBuf::from(path);
-		
-		if !path_buf.exists() {
-			return;
-		}
+		let mut dir_buf: PathBuf = path_buf.clone();
+		let _ = dir_buf.pop();
+		let _ = fs::create_dir_all(dir_buf);
 		
 		let palette: Vec<u8> = self.palette.to_vec();
 		let color_count: usize = palette.len() / 4;

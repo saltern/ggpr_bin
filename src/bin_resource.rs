@@ -913,7 +913,7 @@ impl BinResource {
 				// Report
 				reference.call_deferred("emit_signal", &[
 					Variant::from("save_object"),
-					Variant::from("Scripts"),
+					Variant::from("Palettes"),
 				]);
 
 				let palette_array: Array<Gd<BinPalette>> = object_dict.at("palettes").to();

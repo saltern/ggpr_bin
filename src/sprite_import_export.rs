@@ -245,7 +245,8 @@ impl SpriteExporter {
 		external_palette: Vec<u8>,
 		palette_alpha_mode: u64,
 		palette_override: bool,
-		reindex: bool
+		reindex: bool,
+		compress: bool,
 	) {
 		let clut: u16;
 		let mut palette: Vec<u8>;
@@ -271,49 +272,36 @@ impl SpriteExporter {
 			}
 		}
 		
-		for index in 0..palette.len() / 4 {
-			match palette_alpha_mode {
-				// AS_IS
-				0 => (),
-				
-				// DOUBLE
-				1 => {
-					if palette[4 * index + 3] >= 0x80 {
-						palette[4 * index + 3] = 0xFF;
-					}
+		if palette_alpha_mode > 0 {
+			for index in 0..palette.len() / 4 {
+				match palette_alpha_mode {
+					// DOUBLE
+					1 => {
+						if palette[4 * index + 3] >= 0x80 {
+							palette[4 * index + 3] = 0xFF;
+						}
+						
+						else {
+							palette[4 * index + 3] *= 2;
+						}
+					},
 					
-					else {
-						palette[4 * index + 3] = palette[4 * index + 3] * 2;
-					}
-				},
-				
-				// HALVE
-				2 => palette[4 * index + 3] = palette[4 * index + 3] / 2,
-				
-				// OPAQUE
-				_ => palette[4 * index + 3] = 0xFF,
+					// HALVE
+					2 => palette[4 * index + 3] /= 2,
+					
+					// OPAQUE
+					_ => palette[4 * index + 3] = 0xFF,
+				}
 			}
 		}
 		
 		let mut pixel_vector: Vec<u8>;
+		
 		if reindex {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
-		}
-		
-		else {
+		} else {
 			pixel_vector = sprite.pixels.to_vec();
 		}
-
-		if sprite.bit_depth == 4 {
-			pixel_vector = sprite_transform::bpp_to_4(pixel_vector, true);
-		}
-
-		let image: Gd<Image> = sprite.image.clone().unwrap();
-		let width = image.get_width() as u16;
-		let height = image.get_height() as u16;
-		
-		let header_bytes: Vec<u8> = bin_sprite::make_header(
-			false, clut, sprite.bit_depth, width, height, 0, 0, 0);
 		
 		let bin_file: File;
 		match File::create(&file_path) {
@@ -322,13 +310,32 @@ impl SpriteExporter {
 		}
 		
 		let mut buffer = BufWriter::new(bin_file);
-		let _ = buffer.write_all(&header_bytes);
 		
-		if clut == 0x20 {
-			let _ = buffer.write_all(&palette);
+		if compress {
+			// Guh...
+			let export_sprite: Gd<BinSprite> = BinSprite::new_from_data(
+				PackedByteArray::from(pixel_vector), sprite.width, sprite.height,
+				sprite.image.clone().unwrap(), sprite.bit_depth, PackedByteArray::from(palette)
+			);
+			
+			let _ = buffer.write_all(&export_sprite.bind().to_bin());
+		} else {
+			if sprite.bit_depth == 4 {
+				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, true);
+			}
+		
+			let header_bytes: Vec<u8> = bin_sprite::make_header(
+				false, clut, sprite.bit_depth, sprite.width, sprite.height, 0, 0, 0);
+				
+			let _ = buffer.write_all(&header_bytes);
+			
+			if clut == 0x20 {
+				let _ = buffer.write_all(&palette);
+			}
+			
+			let _ = buffer.write_all(&pixel_vector);
 		}
 		
-		let _ = buffer.write_all(&pixel_vector);
 		let _ = buffer.flush();
 	}
 	
@@ -448,27 +455,26 @@ impl SpriteExporter {
 			encoder.set_palette(rgb_palette);
 		}
 		
-		for index in 0..trns_chunk.len() {
-			match palette_alpha_mode {
-				// AS_IS
-				0 => (),
-				
-				// DOUBLE
-				1 => {
-					if trns_chunk[index] >= 0x80 {
-						trns_chunk[index] = 0xFF;
-					}
+		if palette_alpha_mode > 0 {
+			for index in 0..trns_chunk.len() {
+				match palette_alpha_mode {
+					// DOUBLE
+					1 => {
+						if trns_chunk[index] >= 0x80 {
+							trns_chunk[index] = 0xFF;
+						}
+						
+						else {
+							trns_chunk[index] *= 2;
+						}
+					},
 					
-					else {
-						trns_chunk[index] = trns_chunk[index] * 2;
-					}
-				},
-				
-				// HALVE
-				2 => trns_chunk[index] = trns_chunk[index] / 2,
-				
-				// OPAQUE
-				_ => trns_chunk[index] = 0xFF,
+					// HALVE
+					2 => trns_chunk[index] /= 2,
+					
+					// OPAQUE
+					_ => trns_chunk[index] = 0xFF,
+				}
 			}
 		}
 		
@@ -668,7 +674,22 @@ impl SpriteExporter {
 						g_palette.to_vec(),
 						palette_alpha_mode,
 						palette_override,
-						reindex
+						reindex,
+						true,
+					);
+				},
+			
+				"bin_u" => {
+					file_path.push(format!("sprite_{}.bin", name_index));
+					Self::make_bin(
+						file_path,
+						sprite.bind_mut().deref(),
+						palette_include,
+						g_palette.to_vec(),
+						palette_alpha_mode,
+						palette_override,
+						reindex,
+						false
 					);
 				},
 			

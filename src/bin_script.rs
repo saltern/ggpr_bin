@@ -10,6 +10,7 @@ const ID_ROT			: u8 = 0x08;
 const ID_DRAW_NORMAL	: u8 = 0x10;
 const ID_DRAW_REVERSE	: u8 = 0x11;
 const ID_CELL_JUMP		: u8 = 0x27;
+const ID_PALETTE		: u8 = 0x3C;
 const ID_VISUAL			: u8 = 0x45;
 const ID_END_ACTION		: u8 = 0xFF;
 
@@ -429,6 +430,7 @@ pub struct BinScript {
 		let track_rotate	: i32 = anim.add_track(animation::TrackType::METHOD);
 		let track_draw		: i32 = anim.add_track(animation::TrackType::METHOD);
 		let track_cell_jump	: i32 = anim.add_track(animation::TrackType::METHOD);
+		let track_palette	: i32 = anim.add_track(animation::TrackType::METHOD);
 		let track_visual	: i32 = anim.add_track(animation::TrackType::METHOD);
 		let track_end		: i32 = anim.add_track(animation::TrackType::METHOD);
 
@@ -461,7 +463,12 @@ pub struct BinScript {
 			"method": "emit_signal",
 			"args": varray!["inst_draw_normal"]
 		}.to_variant());
-		
+
+		anim.track_insert_key(track_palette, 0.0, &dict!{
+			"method": "emit_signal",
+			"args": varray!["inst_palette_clear"]
+		}.to_variant());
+
 		anim.track_insert_key(track_visual, 0.0, &dict!{
 			"method": "emit_signal",
 			"args": varray!["inst_visual", 0, 1]
@@ -557,6 +564,16 @@ pub struct BinScript {
 					anim.track_insert_key(track_cell_jump, frame as f64, &dict!{
 						"method": "emit_signal",
 						"args": varray!["inst_cell_jump", cell_begin_number]
+					}.to_variant());
+				}
+
+				ID_PALETTE => {
+					let player: i64 = instruction.arguments.at(0).bind().value;
+					let section: i64 = instruction.arguments.at(1).bind().value;
+
+					anim.track_insert_key(track_palette, frame as f64, &dict!{
+						"method": "emit_signal",
+						"args": varray!["inst_palette", player, section]
 					}.to_variant());
 				}
 

@@ -12,6 +12,23 @@ pub fn reindex_vector(vector: Vec<u8>) -> Vec<u8> {
 }
 
 
+pub fn reindex_rgba_vector(vector: Vec<u8>) -> Vec<u8> {
+	let mut temp_vec: Vec<u8> = vec![0u8; vector.len()];
+	
+	let color_count: usize = vector.len() / 4;
+	
+	for index in 0..color_count {
+		let new_index = transform_index(index as u8) as usize;
+		temp_vec[4 * index + 0] = vector[4 * new_index + 0];
+		temp_vec[4 * index + 1] = vector[4 * new_index + 1];
+		temp_vec[4 * index + 2] = vector[4 * new_index + 2];
+		temp_vec[4 * index + 3] = vector[4 * new_index + 3];
+	}
+	
+	return temp_vec;
+}
+
+
 pub fn transform_index(mut value: u8) -> u8 {
 	// Divide the currently read byte by 8.
 	// - If remainder + 2 can be evenly divided by 4, output is byte value - 8

@@ -292,23 +292,13 @@ impl BinPalette {
 	
 	/// Reindexing function. Reorders colors from 1-2-3-4 to 1-3-2-4 and vice versa.
 	#[func]
-	pub fn reindex(&mut self) {		
-		let mut temp_pal: Vec<u8> = vec![0u8; self.palette.len()];
-		
-		let color_count: usize = self.palette.len() / 4;
-		
-		for color in 0..color_count {
-			let new_index: usize = sprite_transform::transform_index(color as u8) as usize;
-			temp_pal[4 * color + 0] = self.palette[4 * new_index + 0];
-			temp_pal[4 * color + 1] = self.palette[4 * new_index + 1];
-			temp_pal[4 * color + 2] = self.palette[4 * new_index + 2];
-			temp_pal[4 * color + 3] = self.palette[4 * new_index + 3];
-		}
-		
-		self.palette = PackedByteArray::from(temp_pal);
+	pub fn reindex(&mut self) {
+		self.palette = PackedByteArray::from(
+			sprite_transform::reindex_rgba_vector(self.palette.to_vec())
+		);
 	}
-	
-	
+
+
 	/// Alpha halving function. Halves all alpha values except for 0xFF, which is set to 0x80.
 	#[func]
 	pub fn alpha_halve(&mut self) {

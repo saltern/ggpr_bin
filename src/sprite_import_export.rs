@@ -313,6 +313,7 @@ impl SpriteExporter {
 		
 		if compress {
 			// Guh...
+			// TODO: Change this tomfoolery
 			let export_sprite: Gd<BinSprite> = BinSprite::new_from_data(
 				PackedByteArray::from(pixel_vector), sprite.width, sprite.height,
 				sprite.image.clone().unwrap(), sprite.bit_depth, PackedByteArray::from(palette)
@@ -427,23 +428,16 @@ impl SpriteExporter {
 		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
 		
 		let mut trns_chunk: Vec<u8> = Vec::new();
-		
-		if sprite.palette.is_empty() || palette_override || !palette_include {
+
+		{
+			let pal_vec: Vec<u8>;
 			let mut rgb_palette: Vec<u8> = Vec::new();
 			
-			for index in 0..color_count {
-				rgb_palette.push(external_palette[4 * index + 0]);
-				rgb_palette.push(external_palette[4 * index + 1]);
-				rgb_palette.push(external_palette[4 * index + 2]);
-				trns_chunk.push(external_palette[4 * index + 3]);
+			if sprite.palette.is_empty() || palette_override || !palette_include {
+				pal_vec = external_palette;
+			} else {
+				pal_vec = sprite.palette.to_vec();
 			}
-			
-			encoder.set_palette(rgb_palette);
-		}
-		
-		else {
-			let pal_vec: Vec<u8> = sprite.palette.to_vec();
-			let mut rgb_palette: Vec<u8> = Vec::new();
 			
 			for index in 0..color_count {
 				rgb_palette.push(pal_vec[4 * index + 0]);
@@ -567,22 +561,22 @@ impl SpriteExporter {
 		// Color table
 		let mut color_table: Vec<u8> = Vec::with_capacity(768);
 		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
-		
-		// Grayscale
-		if sprite.palette.is_empty() || palette_override || !palette_include {
-			for index in 0..color_count {
-				color_table.push(external_palette[4 * index + 2]);
-				color_table.push(external_palette[4 * index + 1]);
-				color_table.push(external_palette[4 * index + 0]);
+
+		{
+			let pal_vec: Vec<u8>;
+			
+			if sprite.palette.is_empty() || palette_override || !palette_include {
+				// Grayscale
+				pal_vec = external_palette;
+			} else {
+				// Palette (no alpha)
+				pal_vec = sprite.palette.to_vec();
 			}
-		}
-		
-		// Palette (no alpha)
-		else {
+			
 			for index in 0..color_count {
-				color_table.push(sprite.palette[4 * index + 2]);
-				color_table.push(sprite.palette[4 * index + 1]);
-				color_table.push(sprite.palette[4 * index + 0]);
+				color_table.push(pal_vec[4 * index + 2]);
+				color_table.push(pal_vec[4 * index + 1]);
+				color_table.push(pal_vec[4 * index + 0]);
 			}
 		}
 		

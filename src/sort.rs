@@ -47,7 +47,7 @@ impl FileSort {
 		
 		for item in file_vector {
 			return_vector.push(GString::from(item.to_str().unwrap()));
-		}			
+		}
 		
 		return return_vector;
 	}

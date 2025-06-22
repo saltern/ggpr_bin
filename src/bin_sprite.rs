@@ -2,7 +2,6 @@ use godot::prelude::*;
 use godot::classes::ImageTexture;
 use godot::classes::Image;
 use godot::classes::image::Format;
-
 use crate::sprite_transform;
 use crate::sprite_compress;
 use crate::sprite_compress::CompressedData;
@@ -89,6 +88,20 @@ pub fn make_header(compressed: bool, clut: u16, bit_depth: u16, width: u16, heig
 }
 
 
+pub fn generate_hash(compressed_data: &CompressedData) -> u16 {
+	let mut hash: u16 = 0;
+
+	for byte in 0..compressed_data.stream.len() / 2 {
+		hash = hash ^ (
+			(compressed_data.stream[byte + 0] as u16) |
+				(compressed_data.stream[byte + 1] as u16) << 8
+		);
+	}
+	
+	return hash;
+}
+
+
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
 /// Data resulting from loading a sprite_#.bin file.
@@ -172,16 +185,7 @@ impl BinSprite {
 		};
 		
 		let compressed_data: CompressedData = sprite_compress::compress(sprite_data);
-		
-		// Generate hash
-		let mut hash: u16 = 0;
-		
-		for byte in 0..compressed_data.stream.len() / 2 {
-			hash = hash ^ (
-				(compressed_data.stream[byte + 0] as u16) |
-				(compressed_data.stream[byte + 1] as u16) << 8
-			);
-		}
+		let hash = generate_hash(&compressed_data);
 		
 		// Construct header
 		let header: Vec<u8> = make_header(

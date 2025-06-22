@@ -247,6 +247,8 @@ impl SpriteExporter {
 		palette_override: bool,
 		reindex: bool,
 		compress: bool,
+		flip_h: bool,
+		flip_v: bool,
 	) {
 		let clut: u16;
 		let mut palette: Vec<u8>;
@@ -303,6 +305,17 @@ impl SpriteExporter {
 			pixel_vector = sprite.pixels.to_vec();
 		}
 		
+		if flip_h {
+			pixel_vector = sprite_transform::flip_h(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
+		if flip_v {
+			pixel_vector = sprite_transform::flip_v(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
+		
 		let bin_file: File;
 		match File::create(&file_path) {
 			Ok(file) => bin_file = file,
@@ -313,13 +326,38 @@ impl SpriteExporter {
 		
 		if compress {
 			// Guh...
-			// TODO: Change this tomfoolery
-			let export_sprite: Gd<BinSprite> = BinSprite::new_from_data(
-				PackedByteArray::from(pixel_vector), sprite.width, sprite.height,
-				sprite.image.clone().unwrap(), sprite.bit_depth, PackedByteArray::from(palette)
+			// TODO: Consolidate this tomfoolery
+			let sprite_data = SpriteData {
+				width: sprite.width,
+				height: sprite.height,
+				bit_depth: sprite.bit_depth,
+				pixels: pixel_vector,
+				palette: palette.clone(),
+			};
+			
+			let compressed_data = sprite_compress::compress(sprite_data);
+			let hash = bin_sprite::generate_hash(&compressed_data);
+			let header = bin_sprite::make_header(
+				true, clut, sprite.bit_depth, sprite.width, sprite.height, 0x00, 0x00, hash
 			);
 			
-			let _ = buffer.write_all(&export_sprite.bind().to_bin());
+			let iterations = compressed_data.iterations as u32;
+			
+			let _ = buffer.write_all(&header);
+			let _ = buffer.write_all(&palette);
+			let _ = buffer.write_all(&[
+				(iterations >> 16) as u8,	// BB
+				(iterations >> 24) as u8,	// AA
+				(iterations >> 00) as u8,	// DD
+				(iterations >> 08) as u8,	// CC
+			]);
+			
+			for byte in 0..compressed_data.stream.len() / 2 {
+				let _ = buffer.write(&[
+					compressed_data.stream[2 * byte + 1],
+					compressed_data.stream[2 * byte + 0],
+				]);
+			}
 		} else {
 			if sprite.bit_depth == 4 {
 				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, true);
@@ -345,7 +383,9 @@ impl SpriteExporter {
 		mut path_buf: PathBuf,
 		name_index: u64,
 		sprite: &BinSprite,
-		reindex: bool
+		reindex: bool,
+		flip_h: bool,
+		flip_v: bool,
 	) {
 		let image: Gd<Image> = sprite.image.clone().unwrap();
 		let width = image.get_width();
@@ -353,13 +393,23 @@ impl SpriteExporter {
 		
 		path_buf.push(format!("sprite_{}-W-{}-H-{}.raw", name_index, width, height));
 		
-		let pixel_vector: Vec<u8>;
+		let mut pixel_vector: Vec<u8>;
+		
 		if reindex {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
-		}
-		
-		else {
+		} else {
 			pixel_vector = sprite.pixels.to_vec();
+		}
+
+		if flip_h {
+			pixel_vector = sprite_transform::flip_h(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
+		if flip_v {
+			pixel_vector = sprite_transform::flip_v(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
 		}
 		
 		let raw_file: File;
@@ -381,7 +431,9 @@ impl SpriteExporter {
 		external_palette: Vec<u8>,
 		palette_alpha_mode: u64,
 		palette_override: bool,
-		reindex: bool
+		reindex: bool,
+		flip_h: bool,
+		flip_v: bool,
 	) {
 		let png_file: File;
 		match File::create(&file_path) {
@@ -398,29 +450,36 @@ impl SpriteExporter {
 		let mut encoder = png::Encoder::new(buffer, width, height);
 		
 		// 4 bpp handling
-		let mut working_pixels: Vec<u8>;
+		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
+
+		if flip_h {
+			pixel_vector = sprite_transform::flip_h(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
+		if flip_v {
+			pixel_vector = sprite_transform::flip_v(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
 		
 		match sprite.bit_depth {
 			4 => {
-				working_pixels = sprite_transform::align_to_4(sprite.pixels.to_vec(), height as usize);
-				working_pixels = sprite_transform::bpp_to_4(working_pixels, false);
+				pixel_vector = sprite_transform::align_to_4(pixel_vector, height as usize);
+				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, false);
 				encoder.set_depth(png::BitDepth::Four);
 			},
-			
+
 			8 => {
 				if reindex {
-					working_pixels = sprite_transform::reindex_vector(sprite.pixels.to_vec());
+					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
-				
-				else {
-					working_pixels = sprite.pixels.to_vec();
-				}
-				
+
 				encoder.set_depth(png::BitDepth::Eight);
 			},
-			
+
 			_ => return,
-		}	
+		}
 		
 		encoder.set_color(png::ColorType::Indexed);
 		
@@ -475,7 +534,7 @@ impl SpriteExporter {
 		encoder.set_trns(trns_chunk);
 		
 		let mut writer = encoder.write_header().unwrap();
-		writer.write_image_data(&working_pixels).unwrap();
+		writer.write_image_data(&pixel_vector).unwrap();
 	}
 	
 	
@@ -549,7 +608,9 @@ impl SpriteExporter {
 		palette_include: bool,
 		external_palette: Vec<u8>,
 		palette_override: bool,
-		reindex: bool
+		reindex: bool,
+		flip_h: bool,
+		flip_v: bool,
 	) {
 		let image: Gd<Image> = sprite.image.clone().unwrap();
 		let width: u16 = image.get_width() as u16;
@@ -592,22 +653,28 @@ impl SpriteExporter {
 		let _ = buffer.write_all(&header);
 		let _ = buffer.write_all(&color_table);
 		
-		let mut byte_vector: Vec<u8>;
+		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
+
+		if flip_h {
+			pixel_vector = sprite_transform::flip_h(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
+		if flip_v {
+			pixel_vector = sprite_transform::flip_v(
+				pixel_vector, sprite.width as usize, sprite.height as usize
+			)
+		}
 		
 		match sprite.bit_depth {
-			// 1 and 2 bpp not currently in use
 			4 => {
-				byte_vector = sprite_transform::align_to_4(sprite.pixels.to_vec(), height as usize);
-				byte_vector = sprite_transform::bpp_to_4(byte_vector, false);
+				pixel_vector = sprite_transform::align_to_4(pixel_vector, height as usize);
+				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, false);
 			},
 			
 			8 => {
 				if reindex {
-					byte_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
-				}
-				
-				else {
-					byte_vector = sprite.pixels.to_vec();
+					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
 			},
 			
@@ -617,13 +684,13 @@ impl SpriteExporter {
 		
 		// Cheers Wikipedia
 		let row_length: usize = (((sprite.bit_depth * width + 31) / 32) * 4) as usize;
-		let byte_width: usize = byte_vector.len() / height as usize;
+		let byte_width: usize = pixel_vector.len() / height as usize;
 		let padding: usize = row_length - byte_width;
 		
 		// Upside-down write with padding
 		for y in (0..height as usize).rev() {
 			let row_start: usize = y * byte_width;
-			let _ = buffer.write_all(&byte_vector[row_start..row_start + byte_width]);
+			let _ = buffer.write_all(&pixel_vector[row_start..row_start + byte_width]);
 			let _ = buffer.write_all(&vec![0u8; padding]);
 		}
 		
@@ -642,7 +709,9 @@ impl SpriteExporter {
 		g_palette: PackedByteArray,
 		palette_alpha_mode: u64,
 		palette_override: bool,
-		reindex: bool
+		reindex: bool,
+		flip_h: bool,
+		flip_v: bool,
 	) {
 		let path_str: String = String::from(g_path);
 		let path_buf: PathBuf = PathBuf::from(path_str);
@@ -670,6 +739,8 @@ impl SpriteExporter {
 						palette_override,
 						reindex,
 						true,
+						flip_h,
+						flip_v,
 					);
 				},
 			
@@ -683,7 +754,9 @@ impl SpriteExporter {
 						palette_alpha_mode,
 						palette_override,
 						reindex,
-						false
+						false,
+						flip_h,
+						flip_v,
 					);
 				},
 			
@@ -696,7 +769,9 @@ impl SpriteExporter {
 						g_palette.to_vec(),
 						palette_alpha_mode,
 						palette_override,
-						reindex
+						reindex,
+						flip_h,
+						flip_v,
 					);
 				},
 				
@@ -708,7 +783,9 @@ impl SpriteExporter {
 						palette_include,
 						g_palette.to_vec(),
 						palette_override,
-						reindex
+						reindex,
+						flip_h,
+						flip_v,
 					);
 				},
 				
@@ -717,7 +794,9 @@ impl SpriteExporter {
 						file_path,
 						name_index,
 						sprite.bind_mut().deref(),
-						reindex
+						reindex,
+						flip_h,
+						flip_v,
 					);
 				},
 					
@@ -739,6 +818,6 @@ impl SpriteExporter {
 		let _ = directory.pop();
 		let _ = fs::create_dir_all(&directory);
 		
-		Self::make_png(path_buf, &sprite.bind(), false, palette.to_vec(), 3, true, false);
+		Self::make_png(path_buf, &sprite.bind(), false, palette.to_vec(), 3, true, false, false, false);
 	}
 }

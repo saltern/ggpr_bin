@@ -439,42 +439,42 @@ pub struct BinScript {
 		}
 
 		// Resets
-		anim.track_insert_key(track_semitrans, 0.0, &dict!{
+		anim.track_insert_key(track_semitrans, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_semitrans", 0, 0xFF]
 		}.to_variant());
 
-		anim.track_insert_key(track_scale, 0.0, &dict!{
+		anim.track_insert_key(track_scale, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_scale", 0, -1]
 		}.to_variant());
 
-		anim.track_insert_key(track_scale_y, 0.0, &dict!{
+		anim.track_insert_key(track_scale_y, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_scale", 1, -1]
 		}.to_variant());
 		
-		anim.track_insert_key(track_rotate, 0.0, &dict!{
+		anim.track_insert_key(track_rotate, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_rotate", 0, 0]
 		}.to_variant());
 		
-		anim.track_insert_key(track_draw, 0.0, &dict!{
+		anim.track_insert_key(track_draw, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_draw_normal"]
 		}.to_variant());
 
-		anim.track_insert_key(track_palette, 0.0, &dict!{
+		anim.track_insert_key(track_palette, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_palette_clear"]
 		}.to_variant());
 
-		anim.track_insert_key(track_visual, 0.0, &dict!{
+		anim.track_insert_key(track_visual, 0.0, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_visual", 0, 1]
 		}.to_variant());
 		
-		anim.track_insert_key(track_visual, 0.1, &dict!{
+		anim.track_insert_key(track_visual, 0.1, &vdict!{
 			"method": "emit_signal",
 			"args": varray!["inst_visual", 3, 0]
 		}.to_variant());
@@ -495,7 +495,7 @@ pub struct BinScript {
 					let anim_length: f32 = anim.get_length();
 
 					anim.set_length(anim_length + cell_length as f32);
-					anim.track_insert_key(track_cells, frame as f64, &dict!{
+					anim.track_insert_key(track_cells, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_cell", cell_number]
 					}.to_variant());
@@ -507,7 +507,7 @@ pub struct BinScript {
 					let blend_value: i64 = instruction.arguments.at(0).bind().value;
 					let blend_mode: i64 = instruction.arguments.at(1).bind().value;
 
-					anim.track_insert_key(track_semitrans, frame as f64, &dict!{
+					anim.track_insert_key(track_semitrans, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_semitrans", blend_mode, blend_value]
 					}.to_variant());
@@ -524,7 +524,7 @@ pub struct BinScript {
 						which_track = track_scale;
 					}
 
-					anim.track_insert_key(which_track, frame as f64, &dict!{
+					anim.track_insert_key(which_track, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_scale", scale_mode, scale_value]
 					}.to_variant());
@@ -534,21 +534,21 @@ pub struct BinScript {
 					let rotate_mode: i64 = instruction.arguments.at(0).bind().value;
 					let rotate_value: i64 = instruction.arguments.at(1).bind().value;
 
-					anim.track_insert_key(track_rotate, frame as f64, &dict!{
+					anim.track_insert_key(track_rotate, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_rotate", rotate_mode, rotate_value]
 					}.to_variant());
 				}
 
 				ID_DRAW_NORMAL => {
-					anim.track_insert_key(track_draw, frame as f64, &dict!{
+					anim.track_insert_key(track_draw, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_draw_normal"]
 					}.to_variant());
 				}
 
 				ID_DRAW_REVERSE => {
-					anim.track_insert_key(track_draw, frame as f64, &dict!{
+					anim.track_insert_key(track_draw, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_draw_reverse"]
 					}.to_variant());
@@ -561,7 +561,7 @@ pub struct BinScript {
 
 					let cell_begin_number: i64 = instruction.arguments.at(2).bind().value;
 
-					anim.track_insert_key(track_cell_jump, frame as f64, &dict!{
+					anim.track_insert_key(track_cell_jump, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_cell_jump", cell_begin_number]
 					}.to_variant());
@@ -571,7 +571,7 @@ pub struct BinScript {
 					let player: i64 = instruction.arguments.at(0).bind().value;
 					let section: i64 = instruction.arguments.at(1).bind().value;
 
-					anim.track_insert_key(track_palette, frame as f64, &dict!{
+					anim.track_insert_key(track_palette, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_palette", player, section]
 					}.to_variant());
@@ -588,7 +588,7 @@ pub struct BinScript {
 						visual_offset = 0.0;
 					}
 
-					anim.track_insert_key(track_visual, frame as f64 + visual_offset, &dict!{
+					anim.track_insert_key(track_visual, frame as f64 + visual_offset, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_visual", visual_mode, visual_argument]
 					}.to_variant());
@@ -597,7 +597,7 @@ pub struct BinScript {
 				ID_END_ACTION => {
 					let end_mode: i64 = instruction.arguments.at(0).bind().value;
 
-					anim.track_insert_key(track_end, frame as f64, &dict!{
+					anim.track_insert_key(track_end, frame as f64, &vdict!{
 						"method": "emit_signal",
 						"args": varray!["inst_end_action", end_mode]
 					}.to_variant());

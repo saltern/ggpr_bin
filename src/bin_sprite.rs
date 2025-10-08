@@ -181,6 +181,7 @@ impl BinSprite {
 			height,
 			bit_depth: self.bit_depth,
 			pixels: self.pixels.to_vec(),
+			pixels_rgba: vec![],
 			palette: self.palette.to_vec(),
 		};
 		

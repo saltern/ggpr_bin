@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 bitstream-io = "2.5.0"
 bmp-rust = "0.4.1"
+color_quant = "1.1.0"
 godot = { git = "https://github.com/godot-rust/gdext/", branch="master", features = ["register-docs"] }
 natord = "1.0.9"
 png = "0.17.13"

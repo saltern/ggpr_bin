@@ -17,6 +17,7 @@ use crate::sprite_transform;
 use bin_sprite::BinSprite;
 use sprite_compress::SpriteData;
 
+use color_quant::NeuQuant;
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -54,13 +55,16 @@ impl SpriteImporter {
 		as_rgb: bool,
 		reindex: bool,
 		bit_depth: i64,
+		generate_palette: bool,
+		quality_level: i32,
 	) -> Array<Gd<BinSprite>> {
 		let file_vector: Vec<GString> = sprites.to_vec();
 		let mut sprite_vector: Array<Gd<BinSprite>> = array![];
 		
 		for item in file_vector {
 			match Self::import_sprite(
-				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb, reindex, bit_depth
+				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb, reindex, bit_depth,
+				generate_palette, quality_level
 			) {
 				Some(bin_sprite) => sprite_vector.push(&bin_sprite),
 				None => continue,
@@ -83,6 +87,8 @@ impl SpriteImporter {
 		as_rgb: bool,
 		reindex: bool,
 		bit_depth: i64,
+		generate_palette: bool,
+		quality_level: i32,
 	) -> Option<Gd<BinSprite>> {
 		let file_string: String = String::from(file_path);
 		let file: PathBuf = PathBuf::from(file_string);
@@ -112,11 +118,6 @@ impl SpriteImporter {
 			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
 		}
 		
-		// Reindex
-		if reindex {
-			data.pixels = sprite_transform::reindex_vector(data.pixels);
-		}
-		
 		// Forced bit depth
 		match bit_depth {
 			1 => {
@@ -132,34 +133,67 @@ impl SpriteImporter {
 		}
 		
 		// Embed palette
-		if embed_palette && !data.palette.is_empty() {
-			let mut temp_palette: Vec<u8> = data.palette;
-			let color_count: usize = 2usize.pow(data.bit_depth as u32);
-			let offset: usize = temp_palette.len() / 4;
-			
-			// Expand palette
-			if temp_palette.len() < 4 * color_count {
-				for index in 0..color_count - (temp_palette.len() / 4) {
-					// RGB
-					temp_palette.push(0x00);
-					temp_palette.push(0x00);
-					temp_palette.push(0x00);
+		if embed_palette {
+			// Have none
+			if data.palette.is_empty() {
+				// Want to generate
+				if generate_palette {
+					let color_count: usize = 2usize.pow(data.bit_depth as u32);
 					
-					// Default alpha
-					if ((offset + index) / 16) % 2 == 0 && (offset + index) % 8 == 0 && (offset + index) != 8 {
-						temp_palette.push(0x00);
-					} else {
-						temp_palette.push(0x80);
+					let rgba = data.pixels_rgba.as_slice();
+					let neu_quant: NeuQuant = NeuQuant::new(quality_level, color_count, rgba);
+					
+					let palette = neu_quant.color_map_rgba();
+
+					let mut new_vec: Vec<u8> = Vec::new();
+					
+					for pixel in 0..rgba.len() / 4 {
+						new_vec.push(
+							neu_quant.index_of(
+								&[
+									rgba[4 * pixel + 0],
+									rgba[4 * pixel + 1],
+									rgba[4 * pixel + 2],
+									rgba[4 * pixel + 3],
+								]
+							) as u8
+						)
 					}
+					
+					data.pixels = new_vec;
+					data.palette = palette;
 				}
 			}
-			
-			// Truncate palette
+			// Have palette
 			else {
-				temp_palette.resize(color_count * 4, 0u8);
+				let mut temp_palette: Vec<u8> = data.palette;
+				let color_count: usize = 2usize.pow(data.bit_depth as u32);
+				let offset: usize = temp_palette.len() / 4;
+
+				// Expand palette
+				if temp_palette.len() < 4 * color_count {
+					for index in 0..color_count - (temp_palette.len() / 4) {
+						// RGB
+						temp_palette.push(0x00);
+						temp_palette.push(0x00);
+						temp_palette.push(0x00);
+
+						// Default alpha
+						if ((offset + index) / 16) % 2 == 0 && (offset + index) % 8 == 0 && (offset + index) != 8 {
+							temp_palette.push(0x00);
+						} else {
+							temp_palette.push(0x80);
+						}
+					}
+				}
+
+				// Truncate palette
+				else {
+					temp_palette.resize(color_count * 4, 0u8);
+				}
+
+				data.palette = temp_palette;
 			}
-			
-			data.palette = temp_palette;
 		}
 		
 		// Don't embed palette
@@ -179,6 +213,11 @@ impl SpriteImporter {
 		
 		if flip_v {
 			data.pixels = sprite_transform::flip_v(data.pixels, data.width as usize, data.height as usize);
+		}
+
+		// Reindex
+		if reindex {
+			data.pixels = sprite_transform::reindex_vector(data.pixels);
 		}
 		
 		// Now, create BinSprite.
@@ -220,6 +259,75 @@ impl SpriteImporter {
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
+/// Object containing SpriteExporter settings
+struct SpriteExporterSettings {
+	base: Base<Resource>,
+	/// Whether export to compressed .bin should be performed.
+	#[export] export_bin: bool,
+	/// Whether export to uncompressed .bin should be performed.
+	#[export] export_bin_uncompressed: bool,
+	/// Whether export to .raw should be performed.
+	#[export] export_raw: bool,
+	/// Whether export to indexed .png should be performed.
+	#[export] export_png: bool,
+	/// Whether export to indexed .bmp should be performed.
+	#[export] export_bmp: bool,
+	/// Whether the export should include the global or embedded palette.
+	/// If set to false, a black-to-white gradient palette will be used
+	/// for PNG and BMP exports.
+	#[export] palette_include: bool,
+	/// Alpha processing to apply to palette.
+	/// 0: Leave alpha as-is
+	/// 1: Double all alpha values
+	/// 2: Halve all alpha values
+	/// 3: Make every color fully opaque
+	#[export] palette_alpha_mode: u8,
+	/// The actual palette colors. R, G, B, A.
+	#[export] palette_colors: PackedByteArray,
+	/// Whether the palette override option is ticked.
+	/// Forces the use of the external palette (`palette_colors`).
+	#[export] palette_override: bool,
+	/// Whether the sprite should be reindexed.
+	#[export] reindex: bool,
+	/// Mirrors the sprite horizontally.
+	#[export] flip_h: bool,
+	/// Mirrors the sprite vertically.
+	#[export] flip_v: bool,
+	/// Starting sprite number to use for file names.
+	#[export] name_start_index: u32,
+	/// Pads the sprite number with leading zeroes if necessary,
+	/// e.g. if exporting 11 to 100 sprites, one zero will be added;
+	/// if exporting 101 to 1000 sprites, two zeroes will be added. 
+	#[export] name_zero_pad: bool,
+}
+
+
+#[godot_api]
+impl IResource for SpriteExporterSettings {
+	fn init(base: Base<Resource>) -> Self {
+		Self {
+			base,
+			export_bin: false,
+			export_bin_uncompressed: false,
+			export_raw: false,
+			export_png: false,
+			export_bmp: false,
+			palette_include: false,
+			palette_alpha_mode: 0u8,
+			palette_colors: PackedByteArray::from([]),
+			palette_override: false,
+			reindex: false,
+			flip_h: false,
+			flip_v: false,
+			name_start_index: 0u32,
+			name_zero_pad: false,
+		}
+	}
+}
+
+
+#[derive(GodotClass)]
+#[class(tool, base=Resource)]
 /// Rust GGXXAC+R sprite exporter, based on Ghoul.
 struct SpriteExporter {
 	base: Base<Resource>,
@@ -243,7 +351,7 @@ impl SpriteExporter {
 		sprite: &BinSprite,
 		palette_include: bool,
 		external_palette: Vec<u8>,
-		palette_alpha_mode: u64,
+		palette_alpha_mode: u8,
 		palette_override: bool,
 		reindex: bool,
 		compress: bool,
@@ -332,6 +440,7 @@ impl SpriteExporter {
 				height: sprite.height,
 				bit_depth: sprite.bit_depth,
 				pixels: pixel_vector,
+				pixels_rgba: vec![],
 				palette: palette.clone(),
 			};
 			
@@ -381,7 +490,7 @@ impl SpriteExporter {
 
 	fn make_raw(
 		mut path_buf: PathBuf,
-		name_index: u64,
+		name_index: String,
 		sprite: &BinSprite,
 		reindex: bool,
 		flip_h: bool,
@@ -429,7 +538,7 @@ impl SpriteExporter {
 		sprite: &BinSprite,
 		palette_include: bool,
 		external_palette: Vec<u8>,
-		palette_alpha_mode: u64,
+		palette_alpha_mode: u8,
 		palette_override: bool,
 		reindex: bool,
 		flip_h: bool,
@@ -701,107 +810,111 @@ impl SpriteExporter {
 	/// Saves sprites in the specified format at the specified path.
 	#[func]
 	fn export_sprites(
-		g_format: GString,
-		g_path: GString,
-		g_sprites: Vec<Gd<BinSprite>>,
-		name_start_index: u64,
-		palette_include: bool,
-		g_palette: PackedByteArray,
-		palette_alpha_mode: u64,
-		palette_override: bool,
-		reindex: bool,
-		flip_h: bool,
-		flip_v: bool,
+		sprites: Vec<Gd<BinSprite>>,
+		output_path: GString,
+		settings: Gd<SpriteExporterSettings>,
 	) {
-		let path_str: String = String::from(g_path);
+		let settings = settings.bind();
+		let path_str: String = String::from(output_path.clone());
 		let path_buf: PathBuf = PathBuf::from(path_str);
 		
 		if !path_buf.exists() {
 			godot_print!("Could not find export directory!");
 			return Default::default();
 		}
-		
-		let mut name_index: u64 = name_start_index;
+
+		let mut name_index: u32 = settings.name_start_index;
+
+		let padding: usize;
+		if settings.name_zero_pad {
+			let max_sprite: usize = settings.name_start_index as usize + sprites.len() - 1;
+			padding = (max_sprite.checked_ilog10().unwrap_or(0) + 1) as usize;
+		} else {
+			padding = 0;
+		}
 		
 		// Loop over sprites
-		for mut sprite in g_sprites {
-			let mut file_path: PathBuf = path_buf.clone();
-			
-			match g_format.to_string().as_str() {
-				"bin" => {
-					file_path.push(format!("sprite_{}.bin", name_index));
-					Self::make_bin(
-						file_path,
-						sprite.bind_mut().deref(),
-						palette_include,
-						g_palette.to_vec(),
-						palette_alpha_mode,
-						palette_override,
-						reindex,
-						true,
-						flip_h,
-						flip_v,
-					);
-				},
-			
-				"bin_u" => {
-					file_path.push(format!("sprite_{}.bin", name_index));
-					Self::make_bin(
-						file_path,
-						sprite.bind_mut().deref(),
-						palette_include,
-						g_palette.to_vec(),
-						palette_alpha_mode,
-						palette_override,
-						reindex,
-						false,
-						flip_h,
-						flip_v,
-					);
-				},
-			
-				"png" => {
-					file_path.push(format!("sprite_{}.png", name_index));
-					Self::make_png(
-						file_path,
-						sprite.bind_mut().deref(),
-						palette_include,
-						g_palette.to_vec(),
-						palette_alpha_mode,
-						palette_override,
-						reindex,
-						flip_h,
-						flip_v,
-					);
-				},
-				
-				"bmp" => {
-					file_path.push(format!("sprite_{}.bmp", name_index));
-					Self::make_bmp(
-						file_path,
-						sprite.bind_mut().deref(),
-						palette_include,
-						g_palette.to_vec(),
-						palette_override,
-						reindex,
-						flip_h,
-						flip_v,
-					);
-				},
-				
-				"raw" => {
-					Self::make_raw(
-						file_path,
-						name_index,
-						sprite.bind_mut().deref(),
-						reindex,
-						flip_h,
-						flip_v,
-					);
-				},
-					
-				
-				&_ => (),
+		for mut sprite in sprites {
+			if settings.export_bin {
+				let mut file_path: PathBuf = path_buf.clone();
+				file_path.push(format!("sprite_{:0padding$}.bin", name_index));
+
+				Self::make_bin(
+					file_path,
+					sprite.bind_mut().deref(),
+					settings.palette_include,
+					settings.palette_colors.to_vec(),
+					settings.palette_alpha_mode,
+					settings.palette_override,
+					settings.reindex,
+					true,
+					settings.flip_h,
+					settings.flip_v,
+				);
+			}
+
+			if settings.export_bin_uncompressed {
+				let mut file_path: PathBuf = path_buf.clone();
+				file_path.push(format!("u_sprite_{:0padding$}.bin", name_index));
+
+				Self::make_bin(
+					file_path,
+					sprite.bind_mut().deref(),
+					settings.palette_include,
+					settings.palette_colors.to_vec(),
+					settings.palette_alpha_mode,
+					settings.palette_override,
+					settings.reindex,
+					false,
+					settings.flip_h,
+					settings.flip_v,
+				);
+			}
+
+			if settings.export_png {
+				let mut file_path: PathBuf = path_buf.clone();
+				file_path.push(format!("sprite_{:0padding$}.png", name_index));
+
+				Self::make_png(
+					file_path,
+					sprite.bind_mut().deref(),
+					settings.palette_include,
+					settings.palette_colors.to_vec(),
+					settings.palette_alpha_mode,
+					settings.palette_override,
+					settings.reindex,
+					settings.flip_h,
+					settings.flip_v,
+				);
+			}
+
+			if settings.export_bmp {
+				let mut file_path: PathBuf = path_buf.clone();
+				file_path.push(format!("sprite_{:0padding$}.bmp", name_index));
+
+				Self::make_bmp(
+					file_path,
+					sprite.bind_mut().deref(),
+					settings.palette_include,
+					settings.palette_colors.to_vec(),
+					settings.palette_override,
+					settings.reindex,
+					settings.flip_h,
+					settings.flip_v,
+				);
+			}
+
+			if settings.export_raw {
+				let file_path: PathBuf = path_buf.clone();
+
+				Self::make_raw(
+					file_path,
+					format!("{:0padding$}", name_index),
+					sprite.bind_mut().deref(),
+					settings.reindex,
+					settings.flip_h,
+					settings.flip_v,
+				);
 			}
 			
 			name_index += 1;

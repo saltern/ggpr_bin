@@ -19,6 +19,7 @@ pub struct SpriteData {
 	pub height: u16,
 	pub bit_depth: u16,
 	pub pixels: Vec<u8>,
+	pub pixels_rgba: Vec<u8>,
 	pub palette: Vec<u8>,
 }
 
@@ -29,6 +30,7 @@ impl Default for SpriteData {
 			height: 0,
 			bit_depth: 8,
 			pixels: Vec::new(),
+			pixels_rgba: Vec::new(),
 			palette: Vec::new(),
 		}
 	}
@@ -137,7 +139,7 @@ pub fn compress(mut data: SpriteData) -> CompressedData {
 	}
 	
 	return CompressedData {
-		iterations: iterations,
+		iterations,
 		stream: compressed_stream,
 	};
 }
@@ -231,6 +233,7 @@ pub fn decompress(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 		height: header.height,
 		bit_depth: header.bit_depth,
 		pixels: pixel_vector,
+		pixels_rgba: vec![],
 		palette,
 	};
 }

@@ -63,7 +63,7 @@ impl BinResource {
 		
 		if !path_buf.exists() {
 			godot_print!("File was not found");
-			return dict! {
+			return vdict! {
 				"error": "File not found",
 			};
 		}
@@ -71,7 +71,7 @@ impl BinResource {
 		match fs::read(path_buf) {
 			Ok(data) => return Self::load_binary_data(data, instruction_db),
 			
-			_ => return dict! {
+			_ => return vdict! {
 				"error": "Could not read file",
 			},
 		}
@@ -84,7 +84,7 @@ impl BinResource {
 		// Smallest possible file is a SpriteList with a single, palette-less 1x1 sprite
 		// Such a file is 48 bytes long (0x30 hex)
 		if data_length < 0x30 {
-			return dict! {
+			return vdict! {
 				"error": "Invalid file (too short)",
 			}
 		}
@@ -93,7 +93,7 @@ impl BinResource {
 			bin_data[data_length - 0x01], bin_data[data_length - 0x02],
 			bin_data[data_length - 0x03], bin_data[data_length - 0x04],
 		]) == ENCRYPTED_SIGNATURE {
-			return dict! {
+			return vdict! {
 				"error": "Invalid file (encrypted)"
 			}
 		}
@@ -103,7 +103,7 @@ impl BinResource {
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
 		
 		if objects.len() == 0 {
-			return dict! {
+			return vdict! {
 				"error": "Invalid file (no objects)"
 			}
 		}
@@ -138,7 +138,7 @@ impl BinResource {
 		
 		if !path_buf.exists() {
 			godot_print!("Path was not found");
-			return dict! {
+			return vdict! {
 				"error": "Path not found",
 			};
 		}
@@ -358,14 +358,14 @@ impl BinResource {
 						Some(bin_sprite) => {
 							array.push(&bin_sprite);
 							
-							dictionary = dict! {
+							dictionary = vdict! {
 								"type": "sprite",
 								"sprites": array,
 							}
 						},
 						
 						None => {
-							dictionary = dict! {
+							dictionary = vdict! {
 								"type": "unsupported",
 								"data": PackedByteArray::from(object_bin_data.clone()),
 							}
@@ -405,7 +405,7 @@ impl BinResource {
 							(select_w * select_h) as usize].to_vec()
 					);
 					
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "sprite_list_select",
 						"sprites": sprites,
 						"select_width": select_w,
@@ -418,7 +418,7 @@ impl BinResource {
 				ObjectType::SpriteList => {
 					let sprites = Self::load_sprite_list(object_bin_data, 0);
 					
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "sprite_list",
 						"sprites": sprites,
 					};
@@ -434,7 +434,7 @@ impl BinResource {
 					
 					let sprites: Array<Gd<BinSprite>> = Self::load_sprite_list(object_bin_data, 1);
 					
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "jpf_plain_text",
 						"char_index": char_index,
 						"sprites": sprites,
@@ -451,7 +451,7 @@ impl BinResource {
 						object_number += 1;
 					}
 					
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "scriptable",
 						"name": scriptable.name,
 						"cells": scriptable.cells,
@@ -468,14 +468,14 @@ impl BinResource {
 				// Only used by archive_jpf.bin, for speed,
 				// assume rather than try to ID each object
 				ObjectType::MultiScriptable => {
-					let mut multi_scriptable: Dictionary = dict! {};
+					let mut multi_scriptable: Dictionary = vdict! {};
 					let scriptables: Vec<Vec<u8>> = Self::get_objects(object_bin_data);
 					
 					for item in 0..scriptables.len() {
 						let scriptable: Scriptable = Self::load_scriptable(
 							&scriptables[item], item, &instruction_db
 						);
-						let scriptable_dict: Dictionary = dict! {
+						let scriptable_dict: Dictionary = vdict! {
 							"name": "Effect",
 							"type": "scriptable",
 							"cells": scriptable.cells,
@@ -486,7 +486,7 @@ impl BinResource {
 						multi_scriptable.set(item as i64, scriptable_dict);
 					}
 				
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "multi_scriptable",
 						"data": multi_scriptable,
 					};
@@ -494,7 +494,7 @@ impl BinResource {
 				
 				
 				_ => {
-					dictionary = dict! {
+					dictionary = vdict! {
 						"type": "unsupported",
 						"data": PackedByteArray::from(object_bin_data.clone()),
 					};
@@ -529,8 +529,8 @@ impl BinResource {
 			}
 		}
 		
-		return dict! {
-			0u32: dict! {
+		return vdict! {
+			0u32: vdict! {
 				"type": "sprite_list_file",
 				"sprites": sprites,
 			}

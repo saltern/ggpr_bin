@@ -61,6 +61,7 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 	
 	let source_bytes: Vec<u8> = buffer[..frame.buffer_size()].to_vec();
 	let mut pixel_vector: Vec<u8> = Vec::new();
+	let mut pixel_vector_rgba: Vec<u8> = Vec::new();
 	
 	// Transfer color indices to pixel_vector
 	match reader.info().color_type {
@@ -114,6 +115,13 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 			for pixel in 0..source_bytes.len() / 3 {
 				pixel_vector.push(source_bytes[pixel * 3]);
 			}
+			
+			for pixel in 0..source_bytes.len() / 3 {
+				pixel_vector_rgba.push(source_bytes[3 * pixel + 0]);
+				pixel_vector_rgba.push(source_bytes[3 * pixel + 1]);
+				pixel_vector_rgba.push(source_bytes[3 * pixel + 2]);
+				pixel_vector_rgba.push(0xFF);
+			}
 		},
 		
 		png::ColorType::Rgba => {
@@ -122,6 +130,8 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 			for pixel in 0..source_bytes.len() / 4 {
 				pixel_vector.push(source_bytes[pixel * 4]);
 			}
+
+			pixel_vector_rgba = source_bytes;
 		},
 	}
 
@@ -152,6 +162,7 @@ pub fn get_png(source_file: &PathBuf) -> Option<SpriteData> {
 			height: reader.info().height as u16,
 			bit_depth,
 			pixels: pixel_vector,
+			pixels_rgba: pixel_vector_rgba,
 			palette,
 		}
 	);
@@ -195,10 +206,11 @@ pub fn get_raw(source_file: &PathBuf) -> Option<SpriteData> {
 	match fs::read(source_file) {
 		Ok(data) => return Some(
 			SpriteData {
-				width: width,
-				height: height,
+				width,
+				height,
 				bit_depth: 8,
 				pixels: data,
+				pixels_rgba: vec![],
 				palette: vec![],
 			}
 		),
@@ -275,6 +287,7 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 				height: header.height,
 				bit_depth: header.bit_depth,
 				pixels,
+				pixels_rgba: vec![],
 				palette,
 			}
 		);
@@ -418,6 +431,7 @@ pub fn get_bmp(source_file: &PathBuf) -> Option<SpriteData> {
 			height: height as u16,
 			bit_depth: bit_depth as u16,
 			pixels: pixel_vector,
+			pixels_rgba: vec![],
 			palette,
 		}
 	);

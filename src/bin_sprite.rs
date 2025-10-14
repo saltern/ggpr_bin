@@ -11,6 +11,7 @@ pub const HEADER_SIZE: usize = 16;
 
 pub struct BinHeader {
 	pub compressed: bool,
+	pub mode: u16,
 	pub clut: u16,
 	pub bit_depth: u16,
 	pub width: u16,
@@ -21,25 +22,67 @@ pub struct BinHeader {
 }
 
 
-pub fn get_header(data: Vec<u8>) -> BinHeader {	
-	return BinHeader {
-		compressed: data[0] == 1,
-		
-		clut: u16::from_le_bytes([
+pub fn get_header(data: Vec<u8>) -> BinHeader {
+	let compressed: bool;
+	let mode: u16 = u16::from_le_bytes([data[0x00], data[0x01]]);
+	let clut: u16;
+	let bit_depth: u16;
+	let width: u16;
+	let height: u16;
+
+	// GGX
+	if data[0x00] > 0x05 {
+		// If high nibble of high byte is non-zero
+		compressed = (mode & 0xF000) >> 8 != 0;
+
+		// If low nibble of high byte is zero
+		match (mode & 0xF00) >> 8 {
+			0x0F => clut = 0x00,
+			0x00 => clut = 0x20,
+			_ => clut = 0x10,
+		}
+
+		// If low nibble of low byte is 3
+		if (mode & 0xF) == 3 {
+			bit_depth = 8
+		} else {
+			bit_depth = 4
+		}
+
+		width = u16::from_le_bytes([
 			data[0x02], data[0x03]
-		]),
-			
-		bit_depth: u16::from_le_bytes([
+		]);
+
+		height = u16::from_le_bytes([
 			data[0x04], data[0x05]
-		]),
+		]);
+	} else {
+		compressed = mode == 0x01;
+
+		clut = u16::from_le_bytes([
+			data[0x02], data[0x03]
+		]);
 		
-		width: u16::from_le_bytes([
+		bit_depth = u16::from_le_bytes([
+			data[0x04], data[0x05]
+		]);
+		
+		width = u16::from_le_bytes([
 			data[0x06], data[0x07]
-		]),
+		]);
 		
-		height: u16::from_le_bytes([
+		height = u16::from_le_bytes([
 			data[0x08], data[0x09]
-		]),
+		]);
+	}
+
+	return BinHeader {
+		compressed,
+		mode,
+		clut,
+		bit_depth,
+		width,
+		height,
 		
 		tw: u16::from_le_bytes([
 			data[0x0A], data[0x0B]

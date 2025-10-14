@@ -6,6 +6,7 @@ const WII_TPL_SIGNATURE: u32 = 0x0020AF30;
 const WBND_SIGNATURE: usize = 0x444E4257;
 const VAGP_SIGNATURE: u32 = 0x56414770;
 const PALETTE_SIGNATURE: u32 = 0x03002000;
+const PALETTE_SIGNATURE_GGX: u16 = 0xFF00;
 const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
 	// Uncompressed
 	[0x00, 0x00, 0x00, 0x00, 0x04, 0x00],	// No palette, 4bpp
@@ -17,6 +18,23 @@ const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
 	[0x01, 0x00, 0x00, 0x00, 0x08, 0x00],	// No palette, 8bpp
 	[0x01, 0x00, 0x20, 0x00, 0x04, 0x00],	// Palette, 4bpp
 	[0x01, 0x00, 0x20, 0x00, 0x08, 0x00],	// Palette, 8bpp
+];
+
+const SPRITE_SIGNATURES_GGX: [[u8; 2]; 12] = [
+	// Uncompressed
+	[0x14, 0x0F],	// No palette, 4bpp
+	[0x13, 0x0F],	// No palette, 8bpp
+	[0x14, 0x02],	// 0x10 clut, 4bpp
+	[0x13, 0x02],	// 0x10 clut, 8bpp
+	[0x14, 0x00],	// 0x20 clut, 4bpp
+	[0x13, 0x00],	// 0x20 clut, 8bpp
+	// Compressed
+	[0x14, 0x4F],	// No palette, 4bpp
+	[0x13, 0x4F],	// No palette, 8bpp
+	[0x14, 0x42],	// 0x10 clut, 4bpp
+	[0x13, 0x42],	// 0x10 clut, 8bpp
+	[0x14, 0x40],	// 0x20 clut, 4bpp
+	[0x13, 0x40],	// 0x20 clut, 8bpp
 ];
 
 const CELL_LEN_BASE: usize = 0x10;
@@ -118,8 +136,14 @@ pub fn identify_sprite(bin_data: &Vec<u8>) -> bool {
 		bin_data[0x02], bin_data[0x03],
 		bin_data[0x04], bin_data[0x05],
 	];
-	
-	return SPRITE_SIGNATURES.contains(&sprite_signature_check);
+
+	let sprite_signature_check_ggx: [u8; 2] = [
+		bin_data[0x00], bin_data[0x01]
+	];
+
+	return
+		SPRITE_SIGNATURES.contains(&sprite_signature_check) ||
+		SPRITE_SIGNATURES_GGX.contains(&sprite_signature_check_ggx);
 }
 
 
@@ -178,8 +202,14 @@ pub fn identify_sprite_list(bin_data: &Vec<u8>) -> bool {
 		bin_data[cursor + 0x02], bin_data[cursor + 0x03],
 		bin_data[cursor + 0x04], bin_data[cursor + 0x05],
 	];
-	
-	return SPRITE_SIGNATURES.contains(&sprite_signature_check);
+
+	let sprite_signature_check_ggx: [u8; 2] = [
+		bin_data[cursor + 0x00], bin_data[cursor + 0x01],
+	];
+
+	return
+		SPRITE_SIGNATURES.contains(&sprite_signature_check) ||
+		SPRITE_SIGNATURES_GGX.contains(&sprite_signature_check_ggx);
 }
 
 
@@ -254,14 +284,24 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 			bin_data[palette_pointer + 0x02],
 			bin_data[palette_pointer + 0x03],
 		]);
-		
+
+		let palette_signature_check_ggx: u16 = u16::from_be_bytes([
+			bin_data[palette_pointer + 0x00],
+			bin_data[palette_pointer + 0x01],
+		]);
+
+		// +R signature
 		if palette_signature_check != PALETTE_SIGNATURE {
-			return false;
+			// GGX signature
+			if palette_signature_check_ggx != PALETTE_SIGNATURE_GGX {
+				return false;
+			}
 		}
 	}
 	
 	// CELL CHECK ==============================================================
-	
+	// Should remain the same for both +R and GGX
+
 	let mut cursor_cell_pointers: usize = header_pointers[0];
 	let mut cell_pointers: Vec<usize> = Vec::new();
 	
@@ -343,12 +383,14 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 		bin_data[sprite_pointer + 0x02], bin_data[sprite_pointer + 0x03],
 		bin_data[sprite_pointer + 0x04], bin_data[sprite_pointer + 0x05],
 	];
+
+	let sprite_signature_check_ggx: [u8; 2] = [
+		bin_data[sprite_pointer + 0x00], bin_data[sprite_pointer + 0x01],
+	];
 	
-	if !SPRITE_SIGNATURES.contains(&sprite_signature_check) {
-		return false;
-	}
-	
-	return true;
+	return
+		SPRITE_SIGNATURES.contains(&sprite_signature_check) ||
+		SPRITE_SIGNATURES_GGX.contains(&sprite_signature_check_ggx);
 }
 
 

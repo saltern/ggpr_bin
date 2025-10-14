@@ -237,3 +237,74 @@ pub fn decompress(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 		palette,
 	};
 }
+
+
+pub fn decompress_ggx(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
+	let mut pointer: usize = 0x10;
+	let mut palette: Vec<u8> = Vec::new();
+
+	// Get embedded palette
+	if header.clut != 0x00 {
+		let mut color_count: usize = 2u16.pow(header.bit_depth as u32) as usize;
+		if header.clut == 0x10 {
+			color_count /= 2;
+		}
+
+		// Get palette
+		for index in 0..color_count {
+			// RGBA
+			palette.push(bin_data[pointer + 4 * index + 0]);
+			palette.push(bin_data[pointer + 4 * index + 1]);
+			palette.push(bin_data[pointer + 4 * index + 2]);
+			palette.push(bin_data[pointer + 4 * index + 3]);
+		}
+
+		pointer += color_count * 4;
+	}
+
+	let mut pixel_vector: Vec<u8> = Vec::new();
+
+	while pixel_vector.len() < header.width as usize * header.height as usize {
+		// Literals
+		if bin_data[pointer] & 0xC0 == 0 {
+			for _i in 0..bin_data[pointer] as usize + 1 {
+				pointer += 0x01;
+
+				match header.bit_depth {
+					4 => {
+						pixel_vector.push(bin_data[pointer] & 0xF);
+						pixel_vector.push(bin_data[pointer] >> 4);
+					},
+
+					_ => {
+						pixel_vector.push(bin_data[pointer]);
+					}
+				}
+			}
+		}
+
+		// Tokens
+		else {
+			let mut token_count: usize = (bin_data[pointer] as usize + 0xC3) & 0xFF;
+			if header.bit_depth == 4 {
+				token_count *= 2;
+			}
+
+			for _i in 0..token_count {
+				pixel_vector.push(pixel_vector[pixel_vector.len() - 1]);
+			}
+		}
+
+		// Next byte
+		pointer += 0x01;
+	}
+
+	SpriteData {
+		width: header.width,
+		height: header.height,
+		bit_depth: header.bit_depth,
+		pixels: pixel_vector,
+		pixels_rgba: vec![],
+		palette,
+	}
+}

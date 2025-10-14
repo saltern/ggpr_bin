@@ -70,15 +70,24 @@ impl BinPalette {
 
 	// Loads BinPalettes from a raw binary data vector.
 	pub fn from_bin_data(bin_data: Vec<u8>) -> Option<Gd<BinPalette>> {
-		// Check 'clut' byte
-		if bin_data[0x02] != 0x20 {
-			godot_print!("BIN data does not contain a palette.");
+		// clut check
+		let mut has_clut: bool = false;
+
+		// +R check
+		has_clut = has_clut || bin_data[0x02] == 0x20;
+
+		// GGX check
+		has_clut = has_clut || bin_data[0x00] == 0xFF;
+		
+		if !has_clut {
+			godot_print!("bin_palette::from_bin_data() -> BIN data does not contain a palette.");
 			return None;
 		}
 		
 		// Get palette
 		let palette: Vec<u8>;
 		
+		// TODO: Maybe needs updating, maybe not?
 		if bin_data[0x04] == 0x04 {
 			palette = bin_data[0x10..0x50].to_vec();
 		} else {

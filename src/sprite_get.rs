@@ -241,15 +241,30 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 		println!("Input .BIN file has less than 32 bytes, skipping.");
 		return None;
 	}
-	
-	if bin_data[0x00] > 0x01 {
+
+	let mut valid_mode: bool = false;
+
+	// +R uncompressed/compressed modes
+	valid_mode = valid_mode || bin_data[0x00] < 0x02;
+
+	// GGX 4bpp/8bpp modes
+	valid_mode = valid_mode || bin_data[0x00] == 0x14;
+	valid_mode = valid_mode || bin_data[0x00] == 0x13;
+
+	if !valid_mode {
 		println!("Input .BIN file not a sprite, skipping.");
 		return None;
 	}
 	
 	let header: BinHeader = bin_sprite::get_header(bin_data[0x0..0x10].to_vec());
-	
+
 	if header.compressed {
+		// GGX
+		if header.mode > 0x05 {
+			return Some(sprite_compress::decompress_ggx(bin_data, header));
+		}
+
+		// +R
 		return Some(sprite_compress::decompress(bin_data, header));
 	}
 	
@@ -275,11 +290,12 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 		
 		let mut pixels: Vec<u8> = vec![0; bin_data.len() - pointer];
 		pixels.copy_from_slice(&bin_data[pointer..]);
-		pixels.truncate(header.width as usize * header.height as usize);
 		
 		if header.bit_depth == 4 {
 			pixels = sprite_transform::bpp_from_4(pixels, true);
 		}
+		
+		pixels.truncate(header.width as usize * header.height as usize);
 		
 		return Some(
 			SpriteData {

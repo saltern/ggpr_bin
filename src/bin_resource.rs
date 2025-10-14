@@ -132,8 +132,6 @@ impl BinResource {
 	#[func] fn from_path(source_path: String, instruction_db: Dictionary) -> Dictionary {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
-		godot_print!("Loading {}...", &source_path);
-		
 		let mut resource_dictionary: Dictionary = Dictionary::new();
 		
 		if !path_buf.exists() {
@@ -331,7 +329,7 @@ impl BinResource {
 				objects.push(bin_data[header_pointers[pointer]..header_pointers[pointer + 1]].to_vec());
 			}
 		}
-		
+
 		return objects;
 	}
 	
@@ -339,7 +337,7 @@ impl BinResource {
 	fn load_resource_file(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
 		let mut resource_dictionary: Dictionary = Dictionary::new();
-		
+
 		// For every sub object
 		let mut object_number: usize = 0;
 		for object in 0..objects.len() {
@@ -545,8 +543,9 @@ impl BinResource {
 	
 	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary) -> Scriptable {
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
-		
+
 		let mut name = format!("Object #{}", number);
+
 		let cells = Self::load_cells(bin_data, &pointers);
 		let sprites = Self::load_sprites(bin_data, &pointers);
 		let palettes = Self::load_palettes(bin_data, &pointers);
@@ -833,8 +832,6 @@ impl BinResource {
 		
 		file_vector.extend(Self::finalize_pointers(header_pointers));
 		file_vector.extend(data_vector);
-		
-		//godot_print!("Writing to {:?}", path_buf);
 		
 		match File::create(path_buf) {
 			Ok(file) => {

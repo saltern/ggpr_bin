@@ -287,18 +287,21 @@ struct SpriteExporterSettings {
 	/// Whether the palette override option is ticked.
 	/// Forces the use of the external palette (`palette_colors`).
 	#[export] palette_override: bool,
+	/// Whether the palette should be reindexed.
+	/// Can be used to not need to reindex again on import.
+	#[export] palette_reindex: bool,
 	/// Whether the sprite should be reindexed.
-	#[export] reindex: bool,
+	#[export] sprite_reindex: bool,
 	/// Mirrors the sprite horizontally.
-	#[export] flip_h: bool,
+	#[export] sprite_flip_h: bool,
 	/// Mirrors the sprite vertically.
-	#[export] flip_v: bool,
+	#[export] sprite_flip_v: bool,
 	/// Starting sprite number to use for file names.
-	#[export] name_start_index: u32,
+	#[export] file_name_start_index: u32,
 	/// Pads the sprite number with leading zeroes if necessary,
 	/// e.g. if exporting 11 to 100 sprites, one zero will be added;
 	/// if exporting 101 to 1000 sprites, two zeroes will be added. 
-	#[export] name_zero_pad: bool,
+	#[export] file_name_zero_pad: bool,
 }
 
 
@@ -316,11 +319,12 @@ impl IResource for SpriteExporterSettings {
 			palette_alpha_mode: 0u8,
 			palette_colors: PackedByteArray::from([]),
 			palette_override: false,
-			reindex: false,
-			flip_h: false,
-			flip_v: false,
-			name_start_index: 0u32,
-			name_zero_pad: false,
+			palette_reindex: false,
+			sprite_reindex: false,
+			sprite_flip_h: false,
+			sprite_flip_v: false,
+			file_name_start_index: 0u32,
+			file_name_zero_pad: false,
 		}
 	}
 }
@@ -353,10 +357,11 @@ impl SpriteExporter {
 		external_palette: Vec<u8>,
 		palette_alpha_mode: u8,
 		palette_override: bool,
-		reindex: bool,
+		palette_reindex: bool,
+		sprite_reindex: bool,
+		sprite_flip_h: bool,
+		sprite_flip_v: bool,
 		compress: bool,
-		flip_h: bool,
-		flip_v: bool,
 	) {
 		let clut: u16;
 		let mut palette: Vec<u8>;
@@ -404,21 +409,25 @@ impl SpriteExporter {
 				}
 			}
 		}
-		
+
+		if palette_reindex {
+			palette = sprite_transform::reindex_rgba_vector(palette);
+		}
+
 		let mut pixel_vector: Vec<u8>;
 		
-		if reindex {
+		if sprite_reindex {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
 		} else {
 			pixel_vector = sprite.pixels.to_vec();
 		}
 		
-		if flip_h {
+		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
 		}
-		if flip_v {
+		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
@@ -492,9 +501,9 @@ impl SpriteExporter {
 		mut path_buf: PathBuf,
 		name_index: String,
 		sprite: &BinSprite,
-		reindex: bool,
-		flip_h: bool,
-		flip_v: bool,
+		sprite_reindex: bool,
+		sprite_flip_h: bool,
+		sprite_flip_v: bool,
 	) {
 		let image: Gd<Image> = sprite.image.clone().unwrap();
 		let width = image.get_width();
@@ -504,18 +513,18 @@ impl SpriteExporter {
 		
 		let mut pixel_vector: Vec<u8>;
 		
-		if reindex {
+		if sprite_reindex {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
 		} else {
 			pixel_vector = sprite.pixels.to_vec();
 		}
 
-		if flip_h {
+		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
 		}
-		if flip_v {
+		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
@@ -540,9 +549,10 @@ impl SpriteExporter {
 		external_palette: Vec<u8>,
 		palette_alpha_mode: u8,
 		palette_override: bool,
-		reindex: bool,
-		flip_h: bool,
-		flip_v: bool,
+		palette_reindex: bool,
+		sprite_reindex: bool,
+		sprite_flip_h: bool,
+		sprite_flip_v: bool,
 	) {
 		let png_file: File;
 		match File::create(&file_path) {
@@ -561,12 +571,12 @@ impl SpriteExporter {
 		// 4 bpp handling
 		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
 
-		if flip_h {
+		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
 		}
-		if flip_v {
+		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
@@ -580,7 +590,7 @@ impl SpriteExporter {
 			},
 
 			8 => {
-				if reindex {
+				if sprite_reindex {
 					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
 
@@ -598,13 +608,17 @@ impl SpriteExporter {
 		let mut trns_chunk: Vec<u8> = Vec::new();
 
 		{
-			let pal_vec: Vec<u8>;
+			let mut pal_vec: Vec<u8>;
 			let mut rgb_palette: Vec<u8> = Vec::new();
 			
 			if sprite.palette.is_empty() || palette_override || !palette_include {
 				pal_vec = external_palette;
 			} else {
 				pal_vec = sprite.palette.to_vec();
+			}
+			
+			if palette_reindex {
+				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			
 			for index in 0..color_count {
@@ -717,9 +731,10 @@ impl SpriteExporter {
 		palette_include: bool,
 		external_palette: Vec<u8>,
 		palette_override: bool,
-		reindex: bool,
-		flip_h: bool,
-		flip_v: bool,
+		palette_reindex: bool,
+		sprite_reindex: bool,
+		sprite_flip_h: bool,
+		sprite_flip_v: bool,
 	) {
 		let image: Gd<Image> = sprite.image.clone().unwrap();
 		let width: u16 = image.get_width() as u16;
@@ -733,7 +748,7 @@ impl SpriteExporter {
 		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
 
 		{
-			let pal_vec: Vec<u8>;
+			let mut pal_vec: Vec<u8>;
 			
 			if sprite.palette.is_empty() || palette_override || !palette_include {
 				// Grayscale
@@ -741,6 +756,10 @@ impl SpriteExporter {
 			} else {
 				// Palette (no alpha)
 				pal_vec = sprite.palette.to_vec();
+			}
+			
+			if palette_reindex {
+				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			
 			for index in 0..color_count {
@@ -764,12 +783,12 @@ impl SpriteExporter {
 		
 		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
 
-		if flip_h {
+		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
 		}
-		if flip_v {
+		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
 				pixel_vector, sprite.width as usize, sprite.height as usize
 			)
@@ -782,7 +801,7 @@ impl SpriteExporter {
 			},
 			
 			8 => {
-				if reindex {
+				if sprite_reindex {
 					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
 			},
@@ -823,11 +842,11 @@ impl SpriteExporter {
 			return Default::default();
 		}
 
-		let mut name_index: u32 = settings.name_start_index;
+		let mut name_index: u32 = settings.file_name_start_index;
 
 		let padding: usize;
-		if settings.name_zero_pad {
-			let max_sprite: usize = settings.name_start_index as usize + sprites.len() - 1;
+		if settings.file_name_zero_pad {
+			let max_sprite: usize = settings.file_name_start_index as usize + sprites.len() - 1;
 			padding = (max_sprite.checked_ilog10().unwrap_or(0) + 1) as usize;
 		} else {
 			padding = 0;
@@ -846,10 +865,11 @@ impl SpriteExporter {
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
 					settings.palette_override,
-					settings.reindex,
+					settings.palette_reindex,
+					settings.sprite_reindex,
+					settings.sprite_flip_h,
+					settings.sprite_flip_v,
 					true,
-					settings.flip_h,
-					settings.flip_v,
 				);
 			}
 
@@ -864,10 +884,11 @@ impl SpriteExporter {
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
 					settings.palette_override,
-					settings.reindex,
+					settings.palette_reindex,
+					settings.sprite_reindex,
+					settings.sprite_flip_h,
+					settings.sprite_flip_v,
 					false,
-					settings.flip_h,
-					settings.flip_v,
 				);
 			}
 
@@ -882,9 +903,10 @@ impl SpriteExporter {
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
 					settings.palette_override,
-					settings.reindex,
-					settings.flip_h,
-					settings.flip_v,
+					settings.palette_reindex,
+					settings.sprite_reindex,
+					settings.sprite_flip_h,
+					settings.sprite_flip_v,
 				);
 			}
 
@@ -898,9 +920,10 @@ impl SpriteExporter {
 					settings.palette_include,
 					settings.palette_colors.to_vec(),
 					settings.palette_override,
-					settings.reindex,
-					settings.flip_h,
-					settings.flip_v,
+					settings.palette_reindex,
+					settings.sprite_reindex,
+					settings.sprite_flip_h,
+					settings.sprite_flip_v,
 				);
 			}
 
@@ -911,9 +934,9 @@ impl SpriteExporter {
 					file_path,
 					format!("{:0padding$}", name_index),
 					sprite.bind_mut().deref(),
-					settings.reindex,
-					settings.flip_h,
-					settings.flip_v,
+					settings.sprite_reindex,
+					settings.sprite_flip_h,
+					settings.sprite_flip_v,
 				);
 			}
 			
@@ -931,6 +954,17 @@ impl SpriteExporter {
 		let _ = directory.pop();
 		let _ = fs::create_dir_all(&directory);
 		
-		Self::make_png(path_buf, &sprite.bind(), false, palette.to_vec(), 3, true, false, false, false);
+		Self::make_png(
+			path_buf,
+			&sprite.bind(),
+			false,				// palette_include
+			palette.to_vec(),	// external_palette
+			3,					// palette_alpha_mode (3 = Opaque)
+			true,				// palette_override
+			false,				// palette_reindex
+			false,				// sprite_reindex
+			false,				// sprite_flip_h
+			false				// sprite_flip_v
+		);
 	}
 }

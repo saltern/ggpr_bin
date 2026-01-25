@@ -216,7 +216,7 @@ impl SpriteImporter {
 		}
 
 		// Reindex
-		if reindex {
+		if reindex && data.bit_depth == 8 {
 			data.pixels = sprite_transform::reindex_vector(data.pixels);
 		}
 		
@@ -410,13 +410,15 @@ impl SpriteExporter {
 			}
 		}
 
-		if palette_reindex {
+		// Reindex 8-bit sprites only
+		if palette_reindex && sprite.bit_depth == 8 {
 			palette = sprite_transform::reindex_rgba_vector(palette);
 		}
 
 		let mut pixel_vector: Vec<u8>;
 		
-		if sprite_reindex {
+		// Reindex 8-bit sprites only
+		if sprite_reindex && sprite.bit_depth == 8 {
 			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
 		} else {
 			pixel_vector = sprite.pixels.to_vec();
@@ -617,7 +619,7 @@ impl SpriteExporter {
 				pal_vec = sprite.palette.to_vec();
 			}
 			
-			if palette_reindex {
+			if palette_reindex && sprite.bit_depth == 8 {
 				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			
@@ -758,7 +760,7 @@ impl SpriteExporter {
 				pal_vec = sprite.palette.to_vec();
 			}
 			
-			if palette_reindex {
+			if palette_reindex && sprite.bit_depth == 8 {
 				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			

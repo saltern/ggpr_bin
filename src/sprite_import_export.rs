@@ -137,7 +137,7 @@ impl SpriteImporter {
 			// Have none
 			if data.palette.is_empty() {
 				// Want to generate
-				if generate_palette {
+				if generate_palette && data.pixels_rgba.len() == data.width as usize * data.height as usize {
 					let color_count: usize = 2usize.pow(data.bit_depth as u32);
 					
 					let rgba = data.pixels_rgba.as_slice();

@@ -13,6 +13,7 @@ use crate::bin_sprite::BinSprite;
 use crate::bin_cell::Cell;
 use crate::bin_palette::BinPalette;
 use crate::bin_script::*;
+use crate::bin_decrypt::*;
 use crate::sprite_load_save::SpriteLoadSave;
 
 /* object_type:
@@ -68,8 +69,24 @@ impl BinResource {
 			};
 		}
 		
-		match fs::read(path_buf) {
-			Ok(data) => return Self::load_binary_data(data, instruction_db),
+		match fs::read(&path_buf) {
+			Ok(data) => {
+				let bin_data;
+				
+				// Early encryption check while we still have the filename
+				if u32::from_le_bytes([
+					data[data.len() - 0x01],
+					data[data.len() - 0x02],
+					data[data.len() - 0x03],
+					data[data.len() - 0x04],
+				]) == ENCRYPTED_SIGNATURE {
+					bin_data = decrypt_file(path_buf, data);
+				} else {
+					bin_data = data;
+				}
+				
+				return Self::load_binary_data(bin_data, instruction_db)
+			},
 			
 			_ => return vdict! {
 				"error": "Could not read file",
@@ -104,7 +121,7 @@ impl BinResource {
 		
 		if objects.len() == 0 {
 			return vdict! {
-				"error": "Invalid file (no objects)"
+				"error": "Invalid file (no objects or decryption failed (wrong filename?))"
 			}
 		}
 		
@@ -118,7 +135,6 @@ impl BinResource {
 				},
 			}
 		}
-		
 		
 		if sprite_list {
 			return Self::load_sprite_list_file(bin_data);

@@ -1,7 +1,12 @@
 // Based off https://github.com/gdkchan/GGXrdRevelatorDec
 // Which itself seems based off https://gist.github.com/AltimorTASDK/be1f7369af0b02c3816b
 
+use std::fs;
 use std::path::PathBuf;
+
+use crate::bin_identify::ENCRYPTED_SIGNATURE;
+
+use godot::prelude::*;
 
 const MERSENNE_LENGTH: usize = 624;
 const MERSENNE_INIT: u32 = 0x6C078965;
@@ -115,4 +120,77 @@ pub fn decrypt_file(path: PathBuf, bin_data: Vec<u8>) -> Vec<u8> {
 	}
 
 	return output;
+}
+
+
+#[derive(GodotClass)]
+#[class(tool, base=Resource)]
+struct DirDecrypter {
+	base: Base<Resource>,
+}
+
+
+#[godot_api]
+impl IResource for DirDecrypter {
+	fn init(base: Base<Resource>) -> Self {
+		Self {
+			base,
+		} 
+	}
+}
+
+
+#[godot_api]
+impl DirDecrypter {
+	/// Decrypts an entire directory of .bin files
+	#[func] pub fn decrypt_folder(path: String, mut global_signals: Gd<Node>) {
+		let path_buf: PathBuf = PathBuf::from(&path);
+		let reference: &mut Gd<Node> = &mut global_signals;
+
+		reference.call_deferred("emit_signal", &[
+			Variant::from("decryption_start")
+		]);
+
+		for result_entry in path_buf.read_dir().unwrap() {
+			// Error, directory: skip
+			if result_entry.is_err() {
+				continue;
+			}
+
+			let entry = result_entry.unwrap();
+
+			match entry.file_type() {
+				Ok(file_type) => if file_type.is_dir() {
+					continue;
+				}
+
+				_ => continue,
+			}
+
+			// Attempt read
+			match fs::read(entry.path()) {
+				Ok(data) => {
+					let bin_data;
+
+					// Encryption signature check
+					if u32::from_le_bytes([
+						data[data.len() - 0x01],
+						data[data.len() - 0x02],
+						data[data.len() - 0x03],
+						data[data.len() - 0x04],
+					]) == ENCRYPTED_SIGNATURE {
+						// Write immediately
+						bin_data = decrypt_file(entry.path(), data);
+						let _ = fs::write(entry.path(), bin_data);
+					}
+				}
+
+				_ => continue,
+			}
+		}
+
+		reference.call_deferred("emit_signal", &[
+			Variant::from("decryption_end")
+		]);
+	}
 }

@@ -770,7 +770,7 @@ impl BinResource {
 
 					reference.call_deferred("emit_signal", &[
 						Variant::from("save_sub_object"),
-						Variant::from("Single sprite"),
+						Variant::from("SAVE_PROGRESS_SUB_SINGLE_SPRITE"),
 					]);
 
 					data_vector.extend(Self::get_bin_sprite(object_dict));
@@ -832,12 +832,12 @@ impl BinResource {
 					// Report
 					reference.call_deferred("emit_signal", &[
 						Variant::from("save_object"),
-						Variant::from("Unsupported"),
+						Variant::from("SAVE_PROGRESS_OBJ_UNSUPPORTED"),
 					]);
 
 					reference.call_deferred("emit_signal", &[
 						Variant::from("save_sub_object"),
-						Variant::from("Raw bytes"),
+						Variant::from("SAVE_PROGRESS_SUB_RAW_BYTES"),
 					]);
 
 					let data_array: PackedByteArray = object_dict.at("data").to();

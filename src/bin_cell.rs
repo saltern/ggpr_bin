@@ -677,6 +677,59 @@ impl Cell {
 	}
 
 
+	fn layer_write_collision(
+		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
+		coords: Rect2i, color: Color, thickness: i32
+	) -> (Vec<u8>, (i32, i32, i32, i32)) {
+		let box_x = coords.position.x - min_x;
+		let box_y = coords.position.y - min_y;
+		let box_w = coords.size.x;
+		let box_h = coords.size.y;
+		
+		let u = box_y;
+		let d = box_y + box_h;
+		let l = box_x;
+		let r = box_x + box_w;
+
+		for t in 0..thickness {
+			// Top, bottom
+			for x in box_x..box_x + box_w {
+				let at_u = 4 * ((box_y + t) * image_w + x) as usize;
+				let at_d = 4 * ((box_y + box_h - 1 - t) * image_w + x) as usize;
+
+				input_layer[at_u + 0] = color.r8();
+				input_layer[at_u + 1] = color.g8();
+				input_layer[at_u + 2] = color.b8();
+				input_layer[at_u + 3] = color.a8();
+
+				input_layer[at_d + 0] = color.r8();
+				input_layer[at_d + 1] = color.g8();
+				input_layer[at_d + 2] = color.b8();
+				input_layer[at_d + 3] = color.a8();
+			}
+
+			// Left, right
+			for y in box_y..box_y + box_h {
+				let mod_y = y * image_w;
+				let at_l = 4 * (mod_y + box_x + t) as usize;
+				let at_r = 4 * (mod_y + box_x + box_w - 1 - t) as usize;
+
+				input_layer[at_l + 0] = color.r8();
+				input_layer[at_l + 1] = color.g8();
+				input_layer[at_l + 2] = color.b8();
+				input_layer[at_l + 3] = color.a8();
+
+				input_layer[at_r + 0] = color.r8();
+				input_layer[at_r + 1] = color.g8();
+				input_layer[at_r + 2] = color.b8();
+				input_layer[at_r + 3] = color.a8();
+			}
+		}
+
+		return (input_layer, (u, d, l, r));
+	}
+
+
 	fn layer_write_origin(
 		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
 		origin: PackedByteArray
@@ -716,6 +769,7 @@ impl Cell {
 		&self, sprite: Gd<BinSprite>, palette: PackedByteArray, visual_1: bool,
 		// Box params
 		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i32,
+		collision: Rect2i, collision_color: Color,
 		// Origin point params
 		origin: PackedByteArray,
 		// Save path
@@ -740,6 +794,13 @@ impl Cell {
 		).0;
 
 		// Write boxes
+		if collision.size.x > 0 {
+			pixel_vector = Self::layer_write_collision(
+				pixel_vector, min_x, min_y, image_w,
+				collision, collision_color, box_thickness
+			).0;
+		}
+
 		pixel_vector = Self::layer_write_boxes(
 			pixel_vector, min_x, min_y, image_w,
 			&self.boxes, box_display_types, &box_colors, box_thickness
@@ -764,6 +825,7 @@ impl Cell {
 		&self, sprite: Gd<BinSprite>, palette: PackedByteArray, visual_1: bool,
 		// Box params
 		box_display_types: Array<bool>, box_colors: Array<Color>, box_thickness: i32,
+		collision: Rect2i, collision_color: Color,
 		// Origin point params
 		origin: PackedByteArray,
 		// Save path
@@ -791,6 +853,24 @@ impl Cell {
 		);
 
 		layer_vector.push(("Sprite", sprite_layer, sprite_rect));
+
+		// Draw collision box layer
+		if collision.size.x > 0 {
+			let this_layer: Vec<u8> = vec![0u8; layer_size];
+			let layer_name: &str = "Collision (Custom)";
+			
+			let layer_data = Self::layer_write_collision(
+				this_layer, min_x, min_y, image_w,
+				collision, collision_color, box_thickness
+			);
+			
+			layer_vector.push((layer_name, layer_data.0, (
+				layer_data.1.0,
+				layer_data.1.1,
+				layer_data.1.2,
+				layer_data.1.3)
+			));
+		}
 
 		// Boxes, one layer per visible type
 		for box_type_id in 0..box_display_types.len() {

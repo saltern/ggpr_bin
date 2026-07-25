@@ -250,6 +250,9 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 	// GGX 4bpp/8bpp modes
 	valid_mode = valid_mode || bin_data[0x00] == 0x14;
 	valid_mode = valid_mode || bin_data[0x00] == 0x13;
+	
+	// Mode 5
+	valid_mode = valid_mode || bin_data[0x00] == 0x05;
 
 	if !valid_mode {
 		println!("Input .BIN file not a sprite, skipping.");
@@ -260,15 +263,25 @@ pub fn get_bin_data(bin_data: &Vec<u8>) -> Option<SpriteData> {
 
 	if header.compressed {
 		// GGX
-		if header.mode > 0x05 {
+		if header.mode > 0x12 {
+			println!("sprite_get.rs::get_bin_data():\n\tDecompressing GGX sprite");
 			return Some(sprite_compress::decompress_ggx(bin_data, header));
 		}
-
+		
+		// Mode 5
+		else if header.mode == 0x05 {
+			println!("sprite_get.rs::get_bin_data():\n\tDecompressing Mode 5 sprite");
+			return Some(sprite_compress::decompress_mode5(bin_data, header));
+		}
+		
 		// +R
+		println!("sprite_get.rs::get_bin_data():\n\tDecompressing +R sprite");
 		return Some(sprite_compress::decompress(bin_data, header));
+		
 	}
 	
 	else {
+		println!("sprite_get.rs::get_bin_data():\n\tDecompressing +R sprite");
 		let pointer: usize;
 		
 		// Embedded palette

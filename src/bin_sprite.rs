@@ -57,7 +57,7 @@ pub fn get_header(data: Vec<u8>) -> BinHeader {
 			data[0x04], data[0x05]
 		]);
 	} else {
-		compressed = mode == 0x01;
+		compressed = mode > 0x00;
 
 		clut = u16::from_le_bytes([
 			data[0x02], data[0x03]

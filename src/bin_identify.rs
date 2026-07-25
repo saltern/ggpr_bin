@@ -7,7 +7,7 @@ const WBND_SIGNATURE: usize = 0x444E4257;
 const VAGP_SIGNATURE: u32 = 0x56414770;
 const PALETTE_SIGNATURE: u32 = 0x03002000;
 const PALETTE_SIGNATURE_GGX: u16 = 0xFF00;
-const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
+const SPRITE_SIGNATURES: [[u8; 6]; 12] = [
 	// Uncompressed
 	[0x00, 0x00, 0x00, 0x00, 0x04, 0x00],	// No palette, 4bpp
 	[0x00, 0x00, 0x00, 0x00, 0x08, 0x00],	// No palette, 8bpp
@@ -18,6 +18,11 @@ const SPRITE_SIGNATURES: [[u8; 6]; 8] = [
 	[0x01, 0x00, 0x00, 0x00, 0x08, 0x00],	// No palette, 8bpp
 	[0x01, 0x00, 0x20, 0x00, 0x04, 0x00],	// Palette, 4bpp
 	[0x01, 0x00, 0x20, 0x00, 0x08, 0x00],	// Palette, 8bpp
+	// Mode 5
+	[0x05, 0x00, 0x00, 0x00, 0x04, 0x00],	// No palette, 4bpp
+	[0x05, 0x00, 0x00, 0x00, 0x08, 0x00],	// No palette, 8bpp
+	[0x05, 0x00, 0x20, 0x00, 0x04, 0x00],	// Palette, 4bpp
+	[0x05, 0x00, 0x20, 0x00, 0x08, 0x00],	// Palette, 8bpp
 ];
 
 const SPRITE_SIGNATURES_GGX: [[u8; 2]; 12] = [
@@ -261,11 +266,13 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 	
 	// Needs at least 1 sprite
 	if header_pointers.len() < 2 {
+		godot_print!("Scriptable ID failed: Less than 2 pointers");
 		return false;
 	}
 	
-	// Cells, sprites, scripts, palettes
-	if header_pointers.len() > 4 {
+	// Cells, sprites, scripts, palettes, [isuka block]
+	if header_pointers.len() > 5 {
+		godot_print!("Scriptable ID failed: More than 5 pointers");
 		return false;
 	}
 	
@@ -294,6 +301,7 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 		if palette_signature_check != PALETTE_SIGNATURE {
 			// GGX signature
 			if palette_signature_check_ggx != PALETTE_SIGNATURE_GGX {
+				godot_print!("Scriptable ID failed: Palette signature check failed");
 				return false;
 			}
 		}
@@ -355,6 +363,7 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 		}
 		
 		if this_cell.len() != target_len {
+			godot_print!("Scriptable ID failed: Wrong cell length");
 			return false;
 		}
 	}
@@ -375,6 +384,7 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 	]) as usize;
 	
 	if bin_data.len() < sprite_pointer + 0x20 {
+		godot_print!("Scriptable ID failed: Invalid sprite size");
 		return false;
 	}
 	
@@ -388,9 +398,13 @@ pub fn identify_scriptable(bin_data: &Vec<u8>) -> bool {
 		bin_data[sprite_pointer + 0x00], bin_data[sprite_pointer + 0x01],
 	];
 	
-	return
-		SPRITE_SIGNATURES.contains(&sprite_signature_check) ||
-		SPRITE_SIGNATURES_GGX.contains(&sprite_signature_check_ggx);
+	if !(SPRITE_SIGNATURES.contains(&sprite_signature_check) || SPRITE_SIGNATURES_GGX.contains(&sprite_signature_check_ggx))
+	{
+		godot_print!("Scriptable ID failed: Sprite signature mismatch");
+		return false;
+	}
+	
+	true
 }
 
 
@@ -460,9 +474,12 @@ pub fn identify_object(bin_data: &Vec<u8>) -> ObjectType {
 		return ObjectType::WiiTPL;
 	}
 	
+	println!("bin_identify.rs::identify_object(): testing scriptable");
 	if identify_scriptable(bin_data) {
+		println!("bin_identify.rs::identify_object(): scriptable test passed");
 		return ObjectType::Scriptable;
 	}
+	println!("bin_identify.rs::identify_object(): scriptable test failed");
 	
 	if identify_multi_scriptable(bin_data) {
 		return ObjectType::MultiScriptable;

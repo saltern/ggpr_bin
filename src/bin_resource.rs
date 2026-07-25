@@ -558,6 +558,7 @@ impl BinResource {
 	
 	
 	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary) -> Scriptable {
+		println!("bin_resource.rs::BinResource::load_scriptable()");
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 
 		let mut name = format!("Object #{}", number);
@@ -615,6 +616,7 @@ impl BinResource {
 		let mut sprites: Array<Gd<BinSprite>> = Array::new();
 		
 		for sprite in 0..sprite_pointers.len() {
+			println!("bin_resource.rs::BinResource::load_sprites():\n\tLoading sprite {sprite}");
 			let start: usize = pointers[1] + sprite_pointers[sprite];
 			let end: usize;
 			

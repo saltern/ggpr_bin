@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::cmp::min;
 use std::collections::VecDeque;
-use bitstream_io::{BitReader, BitRead, BitWriter, BitWrite, BigEndian, LittleEndian};
+use bitstream_io::{BitReader, BitRead, BitWriter, BitWrite, BigEndian};
 use crate::{
 	bin_sprite::BinHeader,
 	sprite_transform,
@@ -52,10 +52,10 @@ pub fn get_palette(bin_data: &Vec<u8>, header: &BinHeader) -> Vec<u8> {
 		// Read palette
 		for index in 0..color_count {
 			// RGBA
-			palette.push(bin_data[0x10 + index + 4 * index + 0]);
-			palette.push(bin_data[0x10 + index + 4 * index + 1]);
-			palette.push(bin_data[0x10 + index + 4 * index + 2]);
-			palette.push(bin_data[0x10 + index + 4 * index + 3]);
+			palette.push(bin_data[0x10 + 4 * index + 0]);
+			palette.push(bin_data[0x10 + 4 * index + 1]);
+			palette.push(bin_data[0x10 + 4 * index + 2]);
+			palette.push(bin_data[0x10 + 4 * index + 3]);
 		}
 	}
 	
@@ -345,7 +345,6 @@ pub fn extract_bits(chunk: &[u8]) -> VecDeque<bool> {
 		byte = chunk[pointer];
 		for _i in 0..8 {
 			new_chunk.push_back((byte & 1) == 1);
-			//print!("{}", byte & 1);
 			byte >>= 1;
 		}
 	}
@@ -354,9 +353,25 @@ pub fn extract_bits(chunk: &[u8]) -> VecDeque<bool> {
 }
 
 
+pub fn pop_bits(chunk: &mut VecDeque<bool>, bit_count: usize) -> u8 {
+	let mut byte: u8 = 0;
+
+	for bit in 0..bit_count {
+		match chunk.pop_front() {
+			Some(true) => byte |= 1 << bit,
+			Some(false) => (),
+			None => break,
+		}
+	}
+
+	return byte;
+}
+
+
 pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	println!("sprite_compress.rs::decompress_mode5()");
 	let palette: Vec<u8> = get_palette(bin_data, &header);
+	print!("{:?}", palette);
 	let data_offset: usize = 0x10 + palette.len();
 	
 	// Read secondary header
@@ -401,13 +416,14 @@ pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	
 	let mut chunk_a: VecDeque<bool> = extract_bits(&bin_data[from_a..from_b]);
 	let mut chunk_b: VecDeque<bool> = extract_bits(&bin_data[from_b..from_c]);
-	
+	let mut chunk_c: VecDeque<u8> = VecDeque::new();
+	let mut chunk_d: Vec<u8> = Vec::new(); // 1 byte at a time
+	chunk_d.extend_from_slice(&bin_data[from_d..]);
+
 	// 12*5 bits, then skip 4 bits
 	let mut chunk_c_raw: Vec<u8> = Vec::new();
 	chunk_c_raw.extend_from_slice(&bin_data[from_c..from_d]);
-	
-	let mut chunk_c: VecDeque<u8> = VecDeque::new();
-	
+
 	{	// Save myself some chunk-C-based headache
 		for i in 0..chunk_c_raw.len() / 8 {
 			let mut qword: u64 = u64::from_le_bytes([
@@ -423,32 +439,26 @@ pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 			}
 		}
 	}
-	
-	println!("Chunk C byte count: {}", chunk_c.len());
-	
-	// 1 byte at a time
-	let mut chunk_d: Vec<u8> = Vec::new();
-	chunk_d.extend_from_slice(&bin_data[from_d..]);
 
 	let mut pointer_d: usize = 0;
 	
-	let pixel_count: usize = width as usize * height as usize;
+	let pixel_count: usize = width * height;
 	let mut pixel_vector: Vec<u8> = Vec::with_capacity(pixel_count);
 	pixel_vector.resize(pixel_count, 0);
 	
 	let mut pointer_write: usize = 0;
 	
 	height /= 2;
+
+	let mut iterations: u16 = 0;
+	let mut cache_1: u8 = 0;
+	let mut cache_2: u8 = 0;
+	let mut pixel_a: u8 = 0;
+	let mut pixel_b: u8 = 0;
+	let mut pixel_c: u8 = 0;
+	let mut pixel_d: u8 = 0;
 	
 	if mode == 5 {
-		let mut iterations: u16 = 0;
-		let mut cache_1: u8 = 0;
-		let mut cache_2: u8 = 0;
-		let mut pixel_a: u8 = 0;
-		let mut pixel_b: u8 = 0;
-		let mut pixel_c: u8 = 0;
-		let mut pixel_d: u8 = 0;
-	
 		for _y in 0..height {
 			for _x in 0..width / 2 {
 				if iterations == 0 {
@@ -503,29 +513,25 @@ pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 							
 							if chunk_b.pop_front().unwrap() {
 								pixel_d = cache_2;
-							}
-							else {
+							} else {
 								pixel_d = cache_1;
 							}
 							
 							if chunk_b.pop_front().unwrap() {
 								pixel_c = cache_2;
-							}
-							else {
+							} else {
 								pixel_c = cache_1;
 							}
 							
 							if chunk_b.pop_front().unwrap() {
 								pixel_b = cache_2;
-							}
-							else {
+							} else {
 								pixel_b = cache_1;
 							}
 							
 							if chunk_b.pop_front().unwrap() {
 								pixel_a = cache_2;
-							}
-							else {
+							} else {
 								pixel_a = cache_1;
 							}
 						}
@@ -535,6 +541,7 @@ pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 				else {
 					iterations -= 1;
 				}
+				
 				pixel_vector[pointer_write + 0] = pixel_a;
 				pixel_vector[pointer_write + 1] = pixel_b;
 				pixel_vector[pointer_write + width + 0] = pixel_c;
@@ -544,7 +551,93 @@ pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 			pointer_write += width;
 		}
 	}
-	
+
+	if mode == 4 {
+		for _y in 0..height {
+			for _x in 0..width / 2 {
+				if iterations == 0 {
+					if chunk_a.pop_front().unwrap() {
+						if chunk_a.pop_front().unwrap() {
+							pixel_a = pop_bits(&mut chunk_b, 4);
+							cache_1 = pop_bits(&mut chunk_b, 4);
+							pixel_c = pop_bits(&mut chunk_b, 4);
+							cache_2 = pop_bits(&mut chunk_b, 4);
+
+							pixel_b = cache_1;
+							pixel_d = cache_2;
+						}
+
+						else if chunk_a.pop_front().unwrap() {
+							iterations = chunk_d[pointer_d] as u16 + 3;
+							pointer_d += 1;
+						}
+					}
+
+					else if chunk_a.pop_front().unwrap() {
+						if chunk_a.pop_front().unwrap() {
+							cache_1 = pop_bits(&mut chunk_b, 4);
+							pixel_c = cache_1;
+						}
+
+						else if chunk_a.pop_front().unwrap() {
+							pixel_c = cache_2;
+						} else {
+							pixel_c = cache_1;
+						}
+
+						pixel_a = pixel_c;
+						pixel_b = pixel_c;
+						pixel_d = pixel_c;
+					}
+
+					else {
+						if chunk_a.pop_front().unwrap() {
+							cache_1 = pop_bits(&mut chunk_b, 4);
+						}
+						if chunk_a.pop_front().unwrap() {
+							cache_2 = pop_bits(&mut chunk_b, 4);
+						}
+
+						if chunk_b.pop_front().unwrap() {
+							pixel_d = cache_2;
+						} else {
+							pixel_d = cache_1;
+						}
+
+						if chunk_b.pop_front().unwrap() {
+							pixel_c = cache_2;
+						} else {
+							pixel_c = cache_1;
+						}
+
+						if chunk_b.pop_front().unwrap() {
+							pixel_b = cache_2;
+						} else {
+							pixel_b = cache_1;
+						}
+
+						if chunk_b.pop_front().unwrap() {
+							pixel_a = cache_2;
+						} else {
+							pixel_a = cache_1;
+						}
+					}
+				}
+				
+				else {
+					iterations -= 1;
+				}
+				
+				pixel_vector[pointer_write + 0] = pixel_a;
+				pixel_vector[pointer_write + 1] = pixel_b;
+				pixel_vector[pointer_write + width + 0] = pixel_c;
+				pixel_vector[pointer_write + width + 1] = pixel_d;
+				pointer_write += 2;
+			}
+			pointer_write += width;
+		}
+	}
+
 	return SpriteData {
 		width: header.width,
 		height: header.height,

@@ -444,7 +444,7 @@ impl Cell {
 
 			let image: Gd<Image> = Image::create_from_data(
 				region.width as i32, region.height as i32, false, Format::L8,
-				&PackedByteArray::from(pixel_vec)
+				&PackedByteArray::from(pixel_vec.clone())
 			).unwrap();
 
 			let texture: Gd<ImageTexture> = ImageTexture::create_from_image(&image).unwrap();
@@ -574,12 +574,10 @@ impl Cell {
 						pal_index = sprite_transform::transform_index(pal_index);
 					}
 
-					pal_index *= 4;
-
-					let r = palette[(pal_index + 0) as usize];
-					let g = palette[(pal_index + 1) as usize];
-					let b = palette[(pal_index + 2) as usize];
-					let mut a = palette[(pal_index + 3) as usize];
+					let r = palette[4 * (pal_index as usize) + 0];
+					let g = palette[4 * (pal_index as usize) + 1];
+					let b = palette[4 * (pal_index as usize) + 2];
+					let mut a = palette[4 * (pal_index as usize) + 3];
 
 					if a < 128 {
 						a *= 2;

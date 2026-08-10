@@ -9,6 +9,7 @@ use godot::classes::Image;
 use godot::classes::image::Format;
 
 use crate::bin_sprite;
+use crate::bin_palette::BinPalette;
 use crate::sprite_get;
 use crate::sprite_compress;
 
@@ -127,7 +128,8 @@ impl SpriteLoadSave {
 				sprite_data.height,
 				image,
 				sprite_data.bit_depth,
-				PackedByteArray::from(sprite_data.palette)
+				//PackedByteArray::from(sprite_data.palette)
+				BinPalette::from_vector(sprite_data.palette),
 			)),
 			
 			_ => {

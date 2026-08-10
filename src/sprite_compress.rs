@@ -76,7 +76,7 @@ pub fn compress(mut data: SpriteData) -> CompressedData {
 	let mut iterations: usize = 0;
 	
 	// Output bit stream
-	let mut compressed_stream: Vec::<u8> = Vec::new();
+	let mut compressed_stream: Vec<u8> = Vec::new();
 	let mut bit_writer = BitWriter::endian(&mut compressed_stream, BigEndian);
 	
 	// Iterate vector
@@ -371,7 +371,6 @@ pub fn pop_bits(chunk: &mut VecDeque<bool>, bit_count: usize) -> u8 {
 pub fn decompress_mode5(bin_data: &Vec<u8>, header: BinHeader) -> SpriteData {
 	println!("sprite_compress.rs::decompress_mode5()");
 	let palette: Vec<u8> = get_palette(bin_data, &header);
-	print!("{:?}", palette);
 	let data_offset: usize = 0x10 + palette.len();
 	
 	// Read secondary header

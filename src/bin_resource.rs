@@ -59,13 +59,13 @@ impl IResource for BinResource {
 #[godot_api]
 impl BinResource {
 	/// Loads a BIN resource file, returning the objects contained within.
-	#[func] fn from_file(source_path: String, instruction_db: Dictionary) -> Dictionary {
+	#[func] fn from_file(source_path: String, instruction_db: Dictionary<u8, Variant>) -> Dictionary<Variant, Variant> {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
 		if !path_buf.exists() {
 			godot_print!("File was not found");
 			return vdict! {
-				"error": "File not found",
+				"error" => "File not found",
 			};
 		}
 		
@@ -89,20 +89,20 @@ impl BinResource {
 			},
 			
 			_ => return vdict! {
-				"error": "Could not read file",
+				"error" => "Could not read file",
 			},
 		}
 	}
 
 
-	fn load_binary_data(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
+	fn load_binary_data(bin_data: Vec<u8>, instruction_db: Dictionary<u8, Variant>) -> Dictionary<Variant, Variant> {
 		let data_length: usize = bin_data.len();
 		
 		// Smallest possible file is a SpriteList with a single, palette-less 1x1 sprite
 		// Such a file is 48 bytes long (0x30 hex)
 		if data_length < 0x30 {
 			return vdict! {
-				"error": "Invalid file (too short)",
+				"error" => "Invalid file (too short)",
 			}
 		}
 		
@@ -111,7 +111,7 @@ impl BinResource {
 			bin_data[data_length - 0x03], bin_data[data_length - 0x04],
 		]) == ENCRYPTED_SIGNATURE {
 			return vdict! {
-				"error": "Invalid file (encrypted)"
+				"error" => "Invalid file (encrypted)"
 			}
 		}
 		
@@ -121,7 +121,7 @@ impl BinResource {
 		
 		if objects.len() == 0 {
 			return vdict! {
-				"error": "Invalid file (no objects or decryption failed (wrong filename?))"
+				"error" => "Invalid file (no objects or decryption failed (wrong filename?))"
 			}
 		}
 		
@@ -145,19 +145,19 @@ impl BinResource {
 	
 	
 	/// Loads a parsed resource from a directory, returning the objects contained within.
-	#[func] fn from_path(source_path: String, instruction_db: Dictionary) -> Dictionary {
+	#[func] fn from_path(source_path: String, instruction_db: Dictionary<u8, Variant>) -> Dictionary<Variant, Variant> {
 		let path_buf: PathBuf = PathBuf::from(&source_path);
 		
-		let mut resource_dictionary: Dictionary = Dictionary::new();
+		let mut resource_dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 		
 		if !path_buf.exists() {
 			godot_print!("Path was not found");
 			return vdict! {
-				"error": "Path not found",
+				"error" => "Path not found",
 			};
 		}
 		
-		let mut object_vector: Vec<Dictionary> = Vec::new();
+		let mut object_vector: Vec<Dictionary<Variant, Variant>> = Vec::new();
 			
 		for result_entry in path_buf.read_dir().unwrap() {
 			if result_entry.is_err() {
@@ -194,15 +194,15 @@ impl BinResource {
 		}
 			
 		for object in 0..object_vector.len() {
-			resource_dictionary.set(object as i64, object_vector[object].clone());
+			resource_dictionary.set(object as i64, &object_vector[object].clone());
 		}
 		
 		return resource_dictionary;
 	}
 	
 	
-	fn load_object_directory(path_buf: PathBuf, instruction_db: &Dictionary) -> Option<Dictionary> {
-		let mut object_dictionary: Dictionary = Dictionary::new();
+	fn load_object_directory(path_buf: PathBuf, instruction_db: &Dictionary<u8, Variant>) -> Option<Dictionary<Variant, Variant>> {
+		let mut object_dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 
 		// Check if palettes folder...
 		match path_buf.file_name() {
@@ -222,7 +222,7 @@ impl BinResource {
 			return None;
 		}
 		
-		object_dictionary.set("sprites", sprite_array);
+		object_dictionary.set("sprites", &sprite_array);
 		
 		// Load cells (if present)
 		let cell_path: PathBuf = Path::new(&path_buf).join("cells");
@@ -241,7 +241,7 @@ impl BinResource {
 			cell_array_len = cell_array.len();
 			
 			if cell_array_len > 0 {
-				object_dictionary.set("cells", cell_array);
+				object_dictionary.set("cells", &cell_array);
 			}
 		}
 		
@@ -259,7 +259,7 @@ impl BinResource {
 					let script = BinScript::from_bin(
 						fs::read(script_path).unwrap(), object_name == "player", instruction_db
 					);
-					object_dictionary.set("scripts", script);
+					object_dictionary.set("scripts", &script);
 				}
 			}
 
@@ -284,7 +284,7 @@ impl BinResource {
 				}
 				
 				if palette_array.len() > 0 {
-					object_dictionary.set("palettes", palette_array);
+					object_dictionary.set("palettes", &palette_array);
 				}
 			}
 		}
@@ -350,15 +350,15 @@ impl BinResource {
 	}
 	
 	
-	fn load_resource_file(bin_data: Vec<u8>, instruction_db: Dictionary) -> Dictionary {
+	fn load_resource_file(bin_data: Vec<u8>, instruction_db: Dictionary<u8, Variant>) -> Dictionary<Variant, Variant> {
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
-		let mut resource_dictionary: Dictionary = Dictionary::new();
+		let mut resource_dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 
 		// For every sub object
 		let mut object_number: usize = 0;
 		for object in 0..objects.len() {
 			let object_bin_data: &Vec<u8> = &objects[object];
-			let mut dictionary: Dictionary;
+			let mut dictionary: Dictionary<Variant, Variant>;
 
 			// Get and load per object type
 			match identify_object(&object_bin_data) {
@@ -373,15 +373,15 @@ impl BinResource {
 							array.push(&bin_sprite);
 							
 							dictionary = vdict! {
-								"type": "sprite",
-								"sprites": array,
+								"type" => "sprite",
+								"sprites" => &array,
 							}
 						},
 						
 						None => {
 							dictionary = vdict! {
-								"type": "unsupported",
-								"data": PackedByteArray::from(object_bin_data.clone()),
+								"type" => "unsupported",
+								"data" => &PackedByteArray::from(object_bin_data.clone()),
 							}
 						},
 					}
@@ -420,11 +420,11 @@ impl BinResource {
 					);
 					
 					dictionary = vdict! {
-						"type": "sprite_list_select",
-						"sprites": sprites,
-						"select_width": select_w,
-						"select_height": select_h,
-						"select_pixels": select_pixels,
+						"type" => "sprite_list_select",
+						"sprites" => &sprites,
+						"select_width" => select_w,
+						"select_height" => select_h,
+						"select_pixels" => &select_pixels,
 					};
 				},
 				
@@ -433,8 +433,8 @@ impl BinResource {
 					let sprites = Self::load_sprite_list(object_bin_data, 0);
 					
 					dictionary = vdict! {
-						"type": "sprite_list",
-						"sprites": sprites,
+						"type" => "sprite_list",
+						"sprites" => &sprites,
 					};
 				},
 				
@@ -449,9 +449,9 @@ impl BinResource {
 					let sprites: Array<Gd<BinSprite>> = Self::load_sprite_list(object_bin_data, 1);
 					
 					dictionary = vdict! {
-						"type": "jpf_plain_text",
-						"char_index": char_index,
-						"sprites": sprites,
+						"type" => "jpf_plain_text",
+						"char_index" => &char_index,
+						"sprites" => &sprites,
 					}
 				},
 				
@@ -466,15 +466,15 @@ impl BinResource {
 					}
 					
 					dictionary = vdict! {
-						"type": "scriptable",
-						"name": scriptable.name,
-						"cells": scriptable.cells,
-						"sprites": scriptable.sprites,
-						"scripts": scriptable.scripts,
+						"type" => "scriptable",
+						"name" => scriptable.name,
+						"cells" => &scriptable.cells,
+						"sprites" => &scriptable.sprites,
+						"scripts" => &scriptable.scripts,
 					};
 					
 					if scriptable.palettes.len() > 0 {
-						dictionary.set("palettes", scriptable.palettes);
+						dictionary.set("palettes", &scriptable.palettes);
 					}
 				},
 				
@@ -482,47 +482,47 @@ impl BinResource {
 				// Only used by archive_jpf.bin, for speed,
 				// assume rather than try to ID each object
 				ObjectType::MultiScriptable => {
-					let mut multi_scriptable: Dictionary = vdict! {};
+					let mut multi_scriptable: Dictionary<Variant, Variant> = vdict! {};
 					let scriptables: Vec<Vec<u8>> = Self::get_objects(object_bin_data);
 					
 					for item in 0..scriptables.len() {
 						let scriptable: Scriptable = Self::load_scriptable(
 							&scriptables[item], item, &instruction_db
 						);
-						let scriptable_dict: Dictionary = vdict! {
-							"name": "Effect",
-							"type": "scriptable",
-							"cells": scriptable.cells,
-							"sprites": scriptable.sprites,
-							"scripts": scriptable.scripts,
+						let scriptable_dict: Dictionary<Variant, Variant> = vdict! {
+							"name" => "Effect",
+							"type" => "scriptable",
+							"cells" => &scriptable.cells,
+							"sprites" => &scriptable.sprites,
+							"scripts" => &scriptable.scripts,
 						};
 						
-						multi_scriptable.set(item as i64, scriptable_dict);
+						multi_scriptable.set(item as i64, &scriptable_dict);
 					}
 				
 					dictionary = vdict! {
-						"type": "multi_scriptable",
-						"data": multi_scriptable,
+						"type" => "multi_scriptable",
+						"data" => &multi_scriptable,
 					};
 				},
 				
 				
 				_ => {
 					dictionary = vdict! {
-						"type": "unsupported",
-						"data": PackedByteArray::from(object_bin_data.clone()),
+						"type" => "unsupported",
+						"data" => &PackedByteArray::from(object_bin_data.clone()),
 					};
 				},
 			}
 
-			resource_dictionary.set(object as u32, dictionary);
+			resource_dictionary.set(object as u32, &dictionary);
 		}
 
 		return resource_dictionary;
 	}
 	
 	
-	fn load_sprite_list_file(bin_data: Vec<u8>) -> Dictionary {
+	fn load_sprite_list_file(bin_data: Vec<u8>) -> Dictionary<Variant, Variant> {
 		let header_pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 		let mut sprites: Array<Gd<BinSprite>> = Array::new();
 		
@@ -544,9 +544,9 @@ impl BinResource {
 		}
 		
 		return vdict! {
-			0u32: vdict! {
-				"type": "sprite_list_file",
-				"sprites": sprites,
+			0u32 => &vdict! {
+				"type" => "sprite_list_file",
+				"sprites" => &sprites,
 			}
 		}
 	}
@@ -557,7 +557,7 @@ impl BinResource {
 	// =================================================================================
 	
 	
-	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary) -> Scriptable {
+	fn load_scriptable(bin_data: &Vec<u8>, number: usize, instruction_db: &Dictionary<u8, Variant>) -> Scriptable {
 		println!("bin_resource.rs::BinResource::load_scriptable()");
 		let pointers: Vec<usize> = get_pointers(&bin_data, 0x00, false);
 
@@ -644,7 +644,7 @@ impl BinResource {
 	
 	
 	fn load_scripts(
-		bin_data: &Vec<u8>, pointers: &Vec<usize>, has_play_data: bool, instruction_db: &Dictionary
+		bin_data: &Vec<u8>, pointers: &Vec<usize>, has_play_data: bool, instruction_db: &Dictionary<u8, Variant>
 	) -> Gd<BinScript>
 	{
 		let script_bytes: Vec<u8>;
@@ -720,7 +720,7 @@ impl BinResource {
 	
 	
 	#[func] pub fn save_resource_file(
-		dictionary: Dictionary, path: String, mut global_signals: Gd<Node>
+		dictionary: Dictionary<Variant, Variant>, path: String, mut global_signals: Gd<Node>
 	)
 	{
 		{
@@ -740,7 +740,7 @@ impl BinResource {
 		let mut data_vector: Vec<u8> = Vec::new();
 		let mut header_pointers: Vec<u32> = Vec::new();
 		
-		for (_object_number, object_dict) in dictionary.iter_shared().typed::<i64, Dictionary>() {
+		for (_object_number, object_dict) in dictionary.iter_shared().typed::<i64, Dictionary<Variant, Variant>>() {
 			header_pointers.push(data_vector.len() as u32);
 			
 			let this_type: String = object_dict.get("type").unwrap().to_string();
@@ -864,7 +864,7 @@ impl BinResource {
 	
 	
 	#[func] pub fn save_resource_directory(
-		session: Dictionary, path: String, mut global_signals: Gd<Node>
+		session: Dictionary<Variant, Variant>, path: String, mut global_signals: Gd<Node>
 	) {
 		if !PathBuf::from(&path).exists() {
 			match fs::create_dir_all(&path) {
@@ -877,10 +877,10 @@ impl BinResource {
 		}
 
 		let reference: &mut Gd<Node> = &mut global_signals;
-		let dictionary: Dictionary = session.at("data").to();
+		let dictionary: Dictionary<Variant, Variant> = session.at("data").to();
 		
 		for object in 0..dictionary.len() {
-			let object_dict: Dictionary = dictionary.at(object as i64).to();
+			let object_dict: Dictionary<Variant, Variant> = dictionary.at(object as i64).to();
 			let mut object_path: String = path.clone();
 			let object_name: String = object_dict.at("name").to();
 			let push: String = format!("/{}", object_name);
@@ -1159,14 +1159,14 @@ impl BinResource {
 	// OBJECT TYPES ====================================================================
 	
 	
-	fn get_bin_sprite(dictionary: Dictionary) -> Vec<u8> {
+	fn get_bin_sprite(dictionary: Dictionary<Variant, Variant>) -> Vec<u8> {
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		let sprite: Gd<BinSprite> = sprite_array.at(0);
 		return sprite.bind().to_bin();
 	}
 	
 	
-	fn get_bin_sprite_list(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
+	fn get_bin_sprite_list(dictionary: Dictionary<Variant, Variant>, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		
 		let header_pointers: Vec<u32>;
@@ -1183,7 +1183,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_sprite_list_select(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
+	fn get_bin_sprite_list_select(dictionary: Dictionary<Variant, Variant>, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "sprite_list_select"
 		 * "sprites": Array<Gd<BinSprite>>
@@ -1206,8 +1206,8 @@ impl BinResource {
 		let sprites_b: Array<Gd<BinSprite>>;
 
 		if sprites.len() > 178 {
-			sprites_a = sprites.subarray_shallow(0, 178, None);
-			sprites_b = sprites.subarray_shallow(178, sprites.len(), None);
+			sprites_a = sprites.subarray_shallow(0..178, None);
+			sprites_b = sprites.subarray_shallow(178..sprites.len(), None);
 		} else {
 			sprites_a = sprites;
 			sprites_b = array![];
@@ -1258,7 +1258,7 @@ impl BinResource {
 	}
 
 
-	fn get_bin_jpf_plain_text(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
+	fn get_bin_jpf_plain_text(dictionary: Dictionary<Variant, Variant>, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "jpf_plain_text",
 		 * "char_index": PackedByteArray,
@@ -1298,7 +1298,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_scriptable(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
+	fn get_bin_scriptable(dictionary: Dictionary<Variant, Variant>, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "scriptable",
 		 * "name": String,
@@ -1370,7 +1370,7 @@ impl BinResource {
 	}
 	
 	
-	fn get_bin_multi_scriptable(dictionary: Dictionary, global_signals: &mut Gd<Node>) -> Vec<u8> {
+	fn get_bin_multi_scriptable(dictionary: Dictionary<Variant, Variant>, global_signals: &mut Gd<Node>) -> Vec<u8> {
 		/* Dictionary contents:
 		 * "type": "multi_scriptable",
 		 * "data": Dictionary {
@@ -1388,7 +1388,7 @@ impl BinResource {
 		let mut header_pointers: Vec<u32> = Vec::new();
 		let mut data_vector: Vec<u8> = Vec::new();
 		
-		let inner_dict: Dictionary = dictionary.at("data").to();
+		let inner_dict: Dictionary<Variant, Variant> = dictionary.at("data").to();
 		
 		for item in 0..inner_dict.len() {
 			header_pointers.push(data_vector.len() as u32);

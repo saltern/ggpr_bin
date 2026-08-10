@@ -440,43 +440,43 @@ pub struct BinScript {
 
 		// Resets
 		anim.track_insert_key(track_semitrans, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_semitrans", 0, 0xFF]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_semitrans", 0, 0xFF]
 		}.to_variant());
 
 		anim.track_insert_key(track_scale, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_scale", 0, -1]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_scale", 0, -1]
 		}.to_variant());
 
 		anim.track_insert_key(track_scale_y, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_scale", 1, -1]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_scale", 1, -1]
 		}.to_variant());
 		
 		anim.track_insert_key(track_rotate, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_rotate", 0, 0]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_rotate", 0, 0]
 		}.to_variant());
 		
 		anim.track_insert_key(track_draw, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_draw_normal"]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_draw_normal"]
 		}.to_variant());
 
 		anim.track_insert_key(track_palette, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_palette_clear"]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_palette_clear"]
 		}.to_variant());
 
 		anim.track_insert_key(track_visual, 0.0, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_visual", 0, 1]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_visual", 0, 1]
 		}.to_variant());
 		
 		anim.track_insert_key(track_visual, 0.1, &vdict!{
-			"method": "emit_signal",
-			"args": varray!["inst_visual", 3, 0]
+			"method" => "emit_signal",
+			"args" => &varray!["inst_visual", 3, 0]
 		}.to_variant());
 		
 		let mut frame: i64 = 1;
@@ -496,8 +496,8 @@ pub struct BinScript {
 
 					anim.set_length(anim_length + cell_length as f32);
 					anim.track_insert_key(track_cells, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_cell", cell_number]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_cell", cell_number]
 					}.to_variant());
 
 					frame_offset = cell_length;
@@ -508,8 +508,8 @@ pub struct BinScript {
 					let blend_mode: i64 = instruction.arguments.at(1).bind().value;
 
 					anim.track_insert_key(track_semitrans, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_semitrans", blend_mode, blend_value]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_semitrans", blend_mode, blend_value]
 					}.to_variant());
 				}
 
@@ -525,8 +525,8 @@ pub struct BinScript {
 					}
 
 					anim.track_insert_key(which_track, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_scale", scale_mode, scale_value]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_scale", scale_mode, scale_value]
 					}.to_variant());
 				}
 
@@ -535,22 +535,22 @@ pub struct BinScript {
 					let rotate_value: i64 = instruction.arguments.at(1).bind().value;
 
 					anim.track_insert_key(track_rotate, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_rotate", rotate_mode, rotate_value]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_rotate", rotate_mode, rotate_value]
 					}.to_variant());
 				}
 
 				ID_DRAW_NORMAL => {
 					anim.track_insert_key(track_draw, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_draw_normal"]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_draw_normal"]
 					}.to_variant());
 				}
 
 				ID_DRAW_REVERSE => {
 					anim.track_insert_key(track_draw, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_draw_reverse"]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_draw_reverse"]
 					}.to_variant());
 				}
 
@@ -562,8 +562,8 @@ pub struct BinScript {
 					let cell_begin_number: i64 = instruction.arguments.at(2).bind().value;
 
 					anim.track_insert_key(track_cell_jump, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_cell_jump", cell_begin_number]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_cell_jump", cell_begin_number]
 					}.to_variant());
 				}
 
@@ -572,8 +572,8 @@ pub struct BinScript {
 					let section: i64 = instruction.arguments.at(1).bind().value;
 
 					anim.track_insert_key(track_palette, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_palette", player, section]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_palette", player, section]
 					}.to_variant());
 				}
 
@@ -589,8 +589,8 @@ pub struct BinScript {
 					}
 
 					anim.track_insert_key(track_visual, frame as f64 + visual_offset, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_visual", visual_mode, visual_argument]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_visual", visual_mode, visual_argument]
 					}.to_variant());
 				}
 
@@ -598,8 +598,8 @@ pub struct BinScript {
 					let end_mode: i64 = instruction.arguments.at(0).bind().value;
 
 					anim.track_insert_key(track_end, frame as f64, &vdict!{
-						"method": "emit_signal",
-						"args": varray!["inst_end_action", end_mode]
+						"method" => "emit_signal",
+						"args" => &varray!["inst_end_action", end_mode]
 					}.to_variant());
 				}
 
@@ -868,7 +868,7 @@ pub struct BinScript {
 
 
 #[godot_api] impl BinScript {
-	pub fn from_bin(bin_data: Vec<u8>, play_data: bool, instruction_db: &Dictionary) -> Gd<Self> {
+	pub fn from_bin(bin_data: Vec<u8>, play_data: bool, instruction_db: &Dictionary<u8, Variant>) -> Gd<Self> {
 		let mut play_data_array: Array<Gd<PlayData>> = array![];
 		let mut cursor: usize = 0x00;
 
@@ -931,12 +931,12 @@ pub struct BinScript {
 
 			while !action_over && cursor < bin_data.len() {
 				let id = bin_data[cursor];
-				let entry: Dictionary = instruction_db.at(id).to();
+				let entry: Dictionary<GString, Variant> = instruction_db.at(id).to();
 				cursor += 0x01;
 
 				// Add arguments
 				let mut arguments: Array<Gd<InstructionArgument>> = Array::new();
-				let entry_args: Array<Dictionary> = entry.at("arguments").to();
+				let entry_args: Array<Dictionary<Variant, Variant>> = entry.at("arguments").to();
 
 				for entry_arg in entry_args.iter_shared() {
 					let arg_size: u8 = entry_arg.at("size").to();

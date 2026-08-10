@@ -24,3 +24,18 @@ struct GGPRBin;
 
 #[gdextension]
 unsafe impl ExtensionLibrary for GGPRBin {}
+
+
+pub trait Identification {
+	fn identify(bin_data: &Vec<u8>) -> bool;
+}
+
+
+pub trait Serialization {
+	fn serialize(&self) -> Vec<u8>;
+}
+
+
+pub trait Deserialization {
+	fn deserialize(bin_data: Vec<u8>) -> Gd<Self>;
+}

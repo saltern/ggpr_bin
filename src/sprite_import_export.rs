@@ -10,6 +10,7 @@ use godot::classes::Image;
 use godot::classes::image::Format;
 
 use crate::bin_sprite;
+use crate::bin_palette::BinPalette;
 use crate::sprite_get;
 use crate::sprite_compress;
 use crate::sprite_transform;
@@ -238,7 +239,7 @@ impl SpriteImporter {
 			Some(gd_image) => image = gd_image,
 			_ => return None,
 		}
-		
+
 		return Some(BinSprite::new_from_data(
 			// Pixels
 			PackedByteArray::from(data.pixels),
@@ -251,7 +252,7 @@ impl SpriteImporter {
 			// Color depth
 			data.bit_depth,
 			// Palette
-			PackedByteArray::from(data.palette)
+			BinPalette::from_vector(data.palette),
 		));
 	}
 }
@@ -377,13 +378,13 @@ impl SpriteExporter {
 			clut = 0x20;
 			
 			// Sprite has no embedded palette or is forced override
-			if sprite.palette.is_empty() || palette_override {
+			if sprite.palette.is_none() || palette_override {
 				palette = external_palette;
 			}
 			
 			// Sprite has embedded palette
 			else {
-				palette = sprite.palette.to_vec();
+				palette = sprite.get_palette_vector();
 			}
 		}
 		
@@ -613,10 +614,10 @@ impl SpriteExporter {
 			let mut pal_vec: Vec<u8>;
 			let mut rgb_palette: Vec<u8> = Vec::new();
 			
-			if sprite.palette.is_empty() || palette_override || !palette_include {
+			if sprite.palette.is_none() || palette_override || !palette_include {
 				pal_vec = external_palette;
 			} else {
-				pal_vec = sprite.palette.to_vec();
+				pal_vec = sprite.get_palette_vector();
 			}
 			
 			if palette_reindex && sprite.bit_depth == 8 {
@@ -752,12 +753,12 @@ impl SpriteExporter {
 		{
 			let mut pal_vec: Vec<u8>;
 			
-			if sprite.palette.is_empty() || palette_override || !palette_include {
+			if sprite.palette.is_none() || palette_override || !palette_include {
 				// Grayscale
 				pal_vec = external_palette;
 			} else {
 				// Palette (no alpha)
-				pal_vec = sprite.palette.to_vec();
+				pal_vec = sprite.get_palette_vector();
 			}
 			
 			if palette_reindex && sprite.bit_depth == 8 {

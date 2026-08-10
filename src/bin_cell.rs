@@ -340,7 +340,7 @@ impl Cell {
 
 
 	/// Rebuilds the sprite from type 3/6 boxes if present. Otherwise, returns the texture as-is.
-	#[func] pub fn rebuild_sprite(&self, sprite: Gd<BinSprite>, visual_1: bool) -> Dictionary {
+	#[func] pub fn rebuild_sprite(&self, sprite: Gd<BinSprite>, visual_1: bool) -> Dictionary<Variant, Variant> {
 		let mut region_vec: Vec<Gd<BoxInfo>> = Vec::new();
 
 		for box_type in [3u16, 6].iter() {
@@ -360,18 +360,18 @@ impl Cell {
 		// Is cloning bad? Doesn't seem slow.
 		if region_vec.is_empty() {
 			let mut return_dict = Dictionary::new();
-			let mut single_dict = Dictionary::new();
+			let mut single_dict: Dictionary<Variant, Variant> = Dictionary::new();
 
 			single_dict.set("x_offset", 0);
 			single_dict.set("y_offset", 0);
-			single_dict.set("texture", sprite_ref.texture.clone());
-			return_dict.set(0, single_dict);
+			single_dict.set("texture", &sprite_ref.texture.clone().unwrap());
+			return_dict.set(0, &single_dict);
 
 			return return_dict;
 		}
 
 		// Results dictionary
-		let mut dictionary: Dictionary = Dictionary::new();
+		let mut dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 
 		// Allocate pow2 texture like +R does...
 		let pow2_width = sprite_ref.width.next_power_of_two() as isize;
@@ -449,11 +449,11 @@ impl Cell {
 
 			let texture: Gd<ImageTexture> = ImageTexture::create_from_image(&image).unwrap();
 
-			let mut this_rect: Dictionary = Dictionary::new();
+			let mut this_rect: Dictionary<Variant, Variant> = Dictionary::new();
 			this_rect.set("x_offset", region.x_offset + region.crop_x_offset as i16 * 8);
 			this_rect.set("y_offset", region.y_offset + region.crop_y_offset as i16 * 8);
-			this_rect.set("texture", texture);
-			dictionary.set(region_id as u64, this_rect);
+			this_rect.set("texture", &texture);
+			dictionary.set(region_id as i64, &this_rect);
 		}
 
 		return dictionary;
@@ -535,7 +535,7 @@ impl Cell {
 
 	fn layer_write_sprite(
 		mut input_layer: Vec<u8>, min_x: i32, min_y: i32, image_w: i32,
-		sprite_pieces: Dictionary, sprite_x: i32, sprite_y: i32, bit_depth: u16,
+		sprite_pieces: Dictionary<Variant, Variant>, sprite_x: i32, sprite_y: i32, bit_depth: u16,
 		palette: PackedByteArray
 	) -> (Vec<u8>, (i32, i32, i32, i32)) {
 		// Extents for PSD layer rect
@@ -545,7 +545,7 @@ impl Cell {
 		let mut r = i32::MIN;
 
 		for key in sprite_pieces.keys_array().iter_shared() {
-			let piece: Dictionary = sprite_pieces.at(key).to();
+			let piece: Dictionary<Variant, Variant> = sprite_pieces.at(&key).to();
 			// "x_offset", "y_offset", "texture"
 
 			let mut at_x: i32 = piece.at("x_offset").to();
@@ -776,7 +776,7 @@ impl Cell {
 		let (min_y, max_y, min_x, max_x) = self.get_extents(&sprite, &box_display_types, &origin);
 		let sprite_clone = sprite.clone();
 		let sprite_ref = sprite_clone.bind();
-		let sprite_pieces: Dictionary = self.rebuild_sprite(sprite, visual_1);
+		let sprite_pieces: Dictionary<Variant, Variant> = self.rebuild_sprite(sprite, visual_1);
 
 		let image_w = max_x - min_x;
 		let image_h = max_y - min_y;

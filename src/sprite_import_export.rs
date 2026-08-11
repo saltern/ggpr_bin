@@ -9,14 +9,14 @@ use godot::prelude::*;
 use godot::classes::Image;
 use godot::classes::image::Format;
 
-use crate::bin_sprite;
-use crate::bin_palette::BinPalette;
-use crate::sprite_get;
-use crate::sprite_compress;
+use crate::{bin_sprite, Serialization};
+//use crate::bin_palette::BinPalette;
+//use crate::sprite_get;
+//use crate::sprite_compress;
 use crate::sprite_transform;
 
 use bin_sprite::BinSprite;
-use sprite_compress::SpriteData;
+//use sprite_compress::SpriteData;
 
 use color_quant::NeuQuant;
 
@@ -54,9 +54,10 @@ impl SpriteImporter {
 		flip_h: bool,
 		flip_v: bool,
 		as_rgb: bool,
-		reindex: bool,
+		reindex_sprite: bool,
+		reindex_palette: bool,
 		bit_depth: i64,
-		generate_palette: bool,
+		//generate_palette: bool,
 		quality_level: i32,
 	) -> Array<Gd<BinSprite>> {
 		let file_vector: Vec<GString> = sprites.to_vec();
@@ -64,8 +65,9 @@ impl SpriteImporter {
 		
 		for item in file_vector {
 			match Self::import_sprite(
-				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb, reindex, bit_depth,
-				generate_palette, quality_level
+				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb,
+				reindex_sprite, reindex_palette, bit_depth,
+				/*generate_palette,*/ quality_level
 			) {
 				Some(bin_sprite) => sprite_vector.push(&bin_sprite),
 				None => continue,
@@ -86,9 +88,9 @@ impl SpriteImporter {
 		flip_h: bool,
 		flip_v: bool,
 		as_rgb: bool,
-		reindex: bool,
+		reindex_sprite: bool,
+		reindex_palette: bool,
 		bit_depth: i64,
-		generate_palette: bool,
 		quality_level: i32,
 	) -> Option<Gd<BinSprite>> {
 		let file_string: String = String::from(file_path);
@@ -98,162 +100,50 @@ impl SpriteImporter {
 			return None;
 		}
 		
-		let mut data: SpriteData;
+		let mut sprite: Gd<BinSprite>;
 		
-		match sprite_get::get_sprite_file(&file) {
-			Some(sprite_data) => data = sprite_data,
+		match bin_sprite::load_from_file(&file, embed_palette) {
+			Some(binsprite) => sprite = binsprite,
 			None => return None,
 		}
-		
-		if data.width == 0 || data.height == 0 {
-			godot_print!("Skipping file as it is empty");
-			godot_print!("\tFile: {:?}", file);
-			return None;
-		}
-		
-		// Trim padding
-		data.pixels = sprite_transform::trim_padding(data.pixels, data.width as usize, data.height as usize);
-		
-		// As RGB (needs to happen before palette embed)
-		if as_rgb && !data.palette.is_empty() {
-			data.pixels = sprite_transform::indexed_as_rgb(data.pixels, &data.palette);
-		}
-		
-		// Forced bit depth
-		match bit_depth {
-			1 => {
-				data.bit_depth = 4;
-			},
-			
-			2 => data.bit_depth = 8,
-			_ => data.bit_depth = std::cmp::max(data.bit_depth, 4),
-		}
-		
-		if data.bit_depth == 4 {
-			data.pixels = sprite_transform::limit_16_colors(data.pixels);
-		}
-		
-		// Embed palette
-		if embed_palette {
-			// Have none
-			if data.palette.is_empty() {
-				// Want to generate
-				if generate_palette {
-					let color_count: usize = 2usize.pow(data.bit_depth as u32);
-					
-					let rgba = data.pixels_rgba.as_slice();
-					let neu_quant: NeuQuant = NeuQuant::new(quality_level, color_count, rgba);
-					
-					let palette = neu_quant.color_map_rgba();
 
-					let mut new_vec: Vec<u8> = Vec::new();
-					
-					for pixel in 0..rgba.len() / 4 {
-						new_vec.push(
-							neu_quant.index_of(
-								&[
-									rgba[4 * pixel + 0],
-									rgba[4 * pixel + 1],
-									rgba[4 * pixel + 2],
-									rgba[4 * pixel + 3],
-								]
-							) as u8
-						)
-					}
-					
-					data.pixels = new_vec;
-					data.palette = palette;
-				}
+		{
+			let mut sprite_bind = sprite.bind_mut();
+
+			// As RGB (needs to happen before palette embed)
+			if as_rgb && sprite_bind.has_palette() {
+				let pixels: Vec<u8> = sprite_bind.get_pixels();
+				let palette: Vec<u8> = sprite_bind.get_palette();
+				sprite_bind.set_pixels(sprite_transform::indexed_as_rgb(pixels, palette));
 			}
-			// Have palette
-			else {
-				let mut temp_palette: Vec<u8> = data.palette;
-				let color_count: usize = 2usize.pow(data.bit_depth as u32);
-				let offset: usize = temp_palette.len() / 4;
 
-				// Expand palette
-				if temp_palette.len() < 4 * color_count {
-					for index in 0..color_count - (temp_palette.len() / 4) {
-						// RGB
-						temp_palette.push(0x00);
-						temp_palette.push(0x00);
-						temp_palette.push(0x00);
-
-						// Default alpha
-						if ((offset + index) / 16) % 2 == 0 && (offset + index) % 8 == 0 && (offset + index) != 8 {
-							temp_palette.push(0x00);
-						} else {
-							temp_palette.push(0x80);
-						}
-					}
-				}
-
-				// Truncate palette
-				else {
-					temp_palette.resize(color_count * 4, 0u8);
-				}
-
-				data.palette = temp_palette;
+			// Forced bit depth
+			match bit_depth {
+				1 => sprite_bind.set_bit_depth_4(),
+				2 => sprite_bind.set_bit_depth_8(),
+				_ => () //data.bit_depth = std::cmp::max(data.bit_depth, 4),
 			}
-		}
-		
-		// Don't embed palette
-		else {
-			data.palette = Vec::new();
-		}
-		
-		// Halve alpha
-		if halve_alpha {
-			data.palette = sprite_transform::alpha_halve(data.palette);
-		}
-		
-		// Flip H/V
-		if flip_h {
-			data.pixels = sprite_transform::flip_h(data.pixels, data.width as usize, data.height as usize);
-		}
-		
-		if flip_v {
-			data.pixels = sprite_transform::flip_v(data.pixels, data.width as usize, data.height as usize);
+
+			if sprite_bind.get_bit_depth() == 4 {
+				let pixels = sprite_bind.get_pixels();
+				sprite_bind.set_pixels(sprite_transform::limit_16_colors(pixels));
+			}
+
+			// Halve alpha
+			if halve_alpha {
+				sprite_bind.palette_halve_alpha();
+			}
+
+			// Flip H/V
+			if flip_h { sprite_bind.flip_h(); }
+			if flip_v { sprite_bind.flip_v(); }
+
+			// Reindex
+			if reindex_sprite { sprite_bind.reindex_pixels(); }
+			if reindex_palette { sprite_bind.reindex_palette(); }
 		}
 
-		// Reindex
-		if reindex && data.bit_depth == 8 {
-			data.pixels = sprite_transform::reindex_vector(data.pixels);
-		}
-		
-		// Now, create BinSprite.
-		let image: Gd<Image>;
-		
-		match Image::create_from_data(
-			// Width
-			data.width as i32,
-			// Height
-			data.height as i32,
-			// Mipmapping
-			false,
-			// Grayscale format
-			Format::L8,
-			// Pixel array
-			&PackedByteArray::from(data.pixels.clone())
-		) {
-			Some(gd_image) => image = gd_image,
-			_ => return None,
-		}
-
-		return Some(BinSprite::new_from_data(
-			// Pixels
-			PackedByteArray::from(data.pixels),
-			// Width
-			data.width,
-			// Height
-			data.height,
-			// Image
-			image,
-			// Color depth
-			data.bit_depth,
-			// Palette
-			BinPalette::from_vector(data.palette),
-		));
+		return Some(sprite);
 	}
 }
 
@@ -364,138 +254,56 @@ impl SpriteExporter {
 		sprite_flip_v: bool,
 		compress: bool,
 	) {
-		let clut: u16;
-		let mut palette: Vec<u8>;
-		
+		let mut n_sprite: Gd<BinSprite> = sprite.clone();
+		let mut clone = n_sprite.bind_mut();
+
 		// No palette
 		if !palette_include {
-			clut = 0x00;
-			palette = Vec::new();
+			clone.purge_palette();
 		}
 		
 		// Palette included
 		else {
-			clut = 0x20;
-			
 			// Sprite has no embedded palette or is forced override
-			if sprite.palette.is_none() || palette_override {
-				palette = external_palette;
-			}
-			
-			// Sprite has embedded palette
-			else {
-				palette = sprite.get_palette_vector();
-			}
-		}
-		
-		if palette_alpha_mode > 0 {
-			for index in 0..palette.len() / 4 {
-				match palette_alpha_mode {
-					// DOUBLE
-					1 => {
-						if palette[4 * index + 3] >= 0x80 {
-							palette[4 * index + 3] = 0xFF;
-						}
-						
-						else {
-							palette[4 * index + 3] *= 2;
-						}
-					},
-					
-					// HALVE
-					2 => palette[4 * index + 3] /= 2,
-					
-					// OPAQUE
-					_ => palette[4 * index + 3] = 0xFF,
-				}
+			if !clone.has_palette() || palette_override {
+				clone.set_palette(external_palette);
 			}
 		}
 
-		// Reindex 8-bit sprites only
-		if palette_reindex && sprite.bit_depth == 8 {
-			palette = sprite_transform::reindex_rgba_vector(palette);
+		match palette_alpha_mode {
+			0 => (),
+			1 => clone.palette_double_alpha(),
+			2 => clone.palette_halve_alpha(),
+			_ => clone.palette_make_opaque(),
 		}
 
-		let mut pixel_vector: Vec<u8>;
+		// Reindex 8-bit sprites only
+		if palette_reindex {
+			clone.reindex_palette();
+		}
 		
 		// Reindex 8-bit sprites only
-		if sprite_reindex && sprite.bit_depth == 8 {
-			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
+		if sprite_reindex {
+			clone.reindex_pixels();
+		}
+		
+		if sprite_flip_h { clone.flip_h(); }
+		if sprite_flip_v { clone.flip_v(); }
+
+		if compress {
+			clone.set_mode(1);
 		} else {
-			pixel_vector = sprite.pixels.to_vec();
+			clone.set_mode(0);
 		}
-		
-		if sprite_flip_h {
-			pixel_vector = sprite_transform::flip_h(
-				pixel_vector, sprite.width as usize, sprite.height as usize
-			)
-		}
-		if sprite_flip_v {
-			pixel_vector = sprite_transform::flip_v(
-				pixel_vector, sprite.width as usize, sprite.height as usize
-			)
-		}
-		
+
 		let bin_file: File;
 		match File::create(&file_path) {
 			Ok(file) => bin_file = file,
 			_ => return Default::default(),
 		}
-		
+
 		let mut buffer = BufWriter::new(bin_file);
-		
-		if compress {
-			// Guh...
-			// TODO: Consolidate this tomfoolery
-			let sprite_data = SpriteData {
-				width: sprite.width,
-				height: sprite.height,
-				bit_depth: sprite.bit_depth,
-				pixels: pixel_vector,
-				pixels_rgba: vec![],
-				palette: palette.clone(),
-			};
-			
-			let compressed_data = sprite_compress::compress(sprite_data);
-			let hash = bin_sprite::generate_hash(&compressed_data);
-			let header = bin_sprite::make_header(
-				true, clut, sprite.bit_depth, sprite.width, sprite.height, 0x00, 0x00, hash
-			);
-			
-			let iterations = compressed_data.iterations as u32;
-			
-			let _ = buffer.write_all(&header);
-			let _ = buffer.write_all(&palette);
-			let _ = buffer.write_all(&[
-				(iterations >> 16) as u8,	// BB
-				(iterations >> 24) as u8,	// AA
-				(iterations >> 00) as u8,	// DD
-				(iterations >> 08) as u8,	// CC
-			]);
-			
-			for byte in 0..compressed_data.stream.len() / 2 {
-				let _ = buffer.write(&[
-					compressed_data.stream[2 * byte + 1],
-					compressed_data.stream[2 * byte + 0],
-				]);
-			}
-		} else {
-			if sprite.bit_depth == 4 {
-				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, true);
-			}
-		
-			let header_bytes: Vec<u8> = bin_sprite::make_header(
-				false, clut, sprite.bit_depth, sprite.width, sprite.height, 0, 0, 0);
-				
-			let _ = buffer.write_all(&header_bytes);
-			
-			if clut == 0x20 {
-				let _ = buffer.write_all(&palette);
-			}
-			
-			let _ = buffer.write_all(&pixel_vector);
-		}
-		
+		let _ = buffer.write_all(&clone.serialize());
 		let _ = buffer.flush();
 	}
 	
@@ -508,28 +316,25 @@ impl SpriteExporter {
 		sprite_flip_h: bool,
 		sprite_flip_v: bool,
 	) {
-		let image: Gd<Image> = sprite.image.clone().unwrap();
-		let width = image.get_width();
-		let height = image.get_height();
+		let width = sprite.get_width();
+		let height = sprite.get_height();
 		
 		path_buf.push(format!("sprite_{}-W-{}-H-{}.raw", name_index, width, height));
 		
-		let mut pixel_vector: Vec<u8>;
+		let mut pixel_vector: Vec<u8> = sprite.get_pixels();
 		
 		if sprite_reindex {
-			pixel_vector = sprite_transform::reindex_vector(sprite.pixels.to_vec());
-		} else {
-			pixel_vector = sprite.pixels.to_vec();
+			pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 		}
 
 		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, width as usize, height as usize
 			)
 		}
 		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, width as usize, height as usize
 			)
 		}
 		
@@ -563,50 +368,46 @@ impl SpriteExporter {
 			_ => return,
 		}
 		
-		let image: Gd<Image> = sprite.image.clone().unwrap();
-		
-		let width: u32 = image.get_width() as u32;
-		let height: u32 = image.get_height() as u32;
+		let width: u32 = sprite.get_width() as u32;
+		let height: u32 = sprite.get_height() as u32;
 		
 		let ref mut buffer = BufWriter::new(png_file);
 		let mut encoder = png::Encoder::new(buffer, width, height);
 		
 		// 4 bpp handling
-		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
+		let mut pixel_vector: Vec<u8> = sprite.get_pixels();
 
 		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, sprite.get_width() as usize, sprite.get_height() as usize
 			)
 		}
 		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, sprite.get_width() as usize, sprite.get_height() as usize
 			)
 		}
 		
-		match sprite.bit_depth {
+		match sprite.get_bit_depth() {
 			4 => {
 				pixel_vector = sprite_transform::align_to_4(pixel_vector, height as usize);
 				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, false);
 				encoder.set_depth(png::BitDepth::Four);
 			},
 
-			8 => {
+			_ => {
 				if sprite_reindex {
 					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
 
 				encoder.set_depth(png::BitDepth::Eight);
 			},
-
-			_ => return,
 		}
 		
 		encoder.set_color(png::ColorType::Indexed);
 		
 		// Palette
-		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
+		let color_count: usize = 2usize.pow(sprite.get_bit_depth() as u32);
 		
 		let mut trns_chunk: Vec<u8> = Vec::new();
 
@@ -614,13 +415,13 @@ impl SpriteExporter {
 			let mut pal_vec: Vec<u8>;
 			let mut rgb_palette: Vec<u8> = Vec::new();
 			
-			if sprite.palette.is_none() || palette_override || !palette_include {
+			if !sprite.has_palette() || palette_override || !palette_include {
 				pal_vec = external_palette;
 			} else {
-				pal_vec = sprite.get_palette_vector();
+				pal_vec = sprite.get_palette();
 			}
 			
-			if palette_reindex && sprite.bit_depth == 8 {
+			if palette_reindex && sprite.get_bit_depth() == 8 {
 				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			
@@ -739,29 +540,29 @@ impl SpriteExporter {
 		sprite_flip_h: bool,
 		sprite_flip_v: bool,
 	) {
-		let image: Gd<Image> = sprite.image.clone().unwrap();
-		let width: u16 = image.get_width() as u16;
-		let height: u16 = image.get_height() as u16;
+		//let image: Gd<Image> = sprite.image.clone().unwrap();
+		let width: u16 = sprite.get_width() as u16;
+		let height: u16 = sprite.get_height() as u16;
 		
 		// BITMAPFILEHEADER, BITMAPCOREHEADER
-		let header: Vec<u8> = Self::bmp_header(width, height, sprite.bit_depth);
+		let header: Vec<u8> = Self::bmp_header(width, height, sprite.get_bit_depth());
 		
 		// Color table
 		let mut color_table: Vec<u8> = Vec::with_capacity(768);
-		let color_count: usize = 2usize.pow(sprite.bit_depth as u32);
+		let color_count: usize = 2usize.pow(sprite.get_bit_depth() as u32);
 
 		{
 			let mut pal_vec: Vec<u8>;
 			
-			if sprite.palette.is_none() || palette_override || !palette_include {
+			if !sprite.has_palette() || palette_override || !palette_include {
 				// Grayscale
 				pal_vec = external_palette;
 			} else {
 				// Palette (no alpha)
-				pal_vec = sprite.get_palette_vector();
+				pal_vec = sprite.get_palette();
 			}
 			
-			if palette_reindex && sprite.bit_depth == 8 {
+			if palette_reindex && sprite.get_bit_depth() == 8 {
 				pal_vec = sprite_transform::reindex_rgba_vector(pal_vec);
 			}
 			
@@ -784,37 +585,34 @@ impl SpriteExporter {
 		let _ = buffer.write_all(&header);
 		let _ = buffer.write_all(&color_table);
 		
-		let mut pixel_vector: Vec<u8> = sprite.pixels.to_vec();
+		let mut pixel_vector: Vec<u8> = sprite.get_pixels();
 
 		if sprite_flip_h {
 			pixel_vector = sprite_transform::flip_h(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, sprite.get_width() as usize, sprite.get_height() as usize
 			)
 		}
 		if sprite_flip_v {
 			pixel_vector = sprite_transform::flip_v(
-				pixel_vector, sprite.width as usize, sprite.height as usize
+				pixel_vector, sprite.get_width() as usize, sprite.get_height() as usize
 			)
 		}
 		
-		match sprite.bit_depth {
+		match sprite.get_bit_depth() {
 			4 => {
 				pixel_vector = sprite_transform::align_to_4(pixel_vector, height as usize);
 				pixel_vector = sprite_transform::bpp_to_4(pixel_vector, false);
 			},
 			
-			8 => {
+			_ => {
 				if sprite_reindex {
 					pixel_vector = sprite_transform::reindex_vector(pixel_vector);
 				}
 			},
-			
-			// Shouldn't happen
-			_ => panic!("sprite_make::make_bmp() error: Invalid bit depth"),
 		}
 		
 		// Cheers Wikipedia
-		let row_length: usize = (((sprite.bit_depth * width + 31) / 32) * 4) as usize;
+		let row_length: usize = (((sprite.get_bit_depth() * width + 31) / 32) * 4) as usize;
 		let byte_width: usize = pixel_vector.len() / height as usize;
 		let padding: usize = row_length - byte_width;
 		
@@ -863,7 +661,7 @@ impl SpriteExporter {
 
 				Self::make_bin(
 					file_path,
-					sprite.bind_mut().deref(),
+					&sprite.bind_mut(),
 					settings.palette_include,
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
@@ -882,7 +680,7 @@ impl SpriteExporter {
 
 				Self::make_bin(
 					file_path,
-					sprite.bind_mut().deref(),
+					&sprite.bind_mut(),
 					settings.palette_include,
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
@@ -901,7 +699,7 @@ impl SpriteExporter {
 
 				Self::make_png(
 					file_path,
-					sprite.bind_mut().deref(),
+					&sprite.bind_mut(),
 					settings.palette_include,
 					settings.palette_colors.to_vec(),
 					settings.palette_alpha_mode,
@@ -919,7 +717,7 @@ impl SpriteExporter {
 
 				Self::make_bmp(
 					file_path,
-					sprite.bind_mut().deref(),
+					&sprite.bind_mut(),
 					settings.palette_include,
 					settings.palette_colors.to_vec(),
 					settings.palette_override,
@@ -936,7 +734,7 @@ impl SpriteExporter {
 				Self::make_raw(
 					file_path,
 					format!("{:0padding$}", name_index),
-					sprite.bind_mut().deref(),
+					&sprite.bind_mut(),
 					settings.sprite_reindex,
 					settings.sprite_flip_h,
 					settings.sprite_flip_v,

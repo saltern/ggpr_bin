@@ -2,7 +2,6 @@ use crate::bin_sprite::BinSprite;
 use godot::prelude::*;
 
 use crate::Identification;
-use crate::bin_sprite::GGSprite;
 
 pub const ENCRYPTED_SIGNATURE: u32 = 0x41534743;
 const CHARIDX_SIGNATURE: u32 = 0x082A2000;
@@ -457,12 +456,6 @@ pub fn identify_object(bin_data: &Vec<u8>) -> ObjectType {
 	if identify_audio_vagp(bin_data) {
 		return ObjectType::Unsupported;
 	}
-
-	/*
-	if identify_sprite(bin_data) {
-		return ObjectType::Sprite;
-	}
-	 */
 
 	if BinSprite::identify(bin_data) {
 		return ObjectType::Sprite;

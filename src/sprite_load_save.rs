@@ -1,3 +1,4 @@
+use crate::{Deserialization, Serialization};
 use std::io::Write;
 use std::io::BufWriter;
 use std::fs;
@@ -9,12 +10,12 @@ use godot::classes::Image;
 use godot::classes::image::Format;
 
 use crate::bin_sprite;
-use crate::bin_palette::BinPalette;
-use crate::sprite_get;
-use crate::sprite_compress;
+//use crate::bin_palette::BinPalette;
+//use crate::sprite_get;
+//use crate::sprite_compress;
 
 use bin_sprite::BinSprite;
-use sprite_compress::SpriteData;
+//use sprite_compress::SpriteData;
 
 
 #[derive(GodotClass)]
@@ -88,53 +89,9 @@ impl SpriteLoadSave {
 		}
 	
 		match fs::read(file) {
-			Ok(data) => return Self::load_sprite_data(&data),
+			// Ok(data) => return Self::load_sprite_data(&data),
+			Ok(data) => return BinSprite::deserialize(&data),
 			_ => return None,
-		}
-	}
-	
-	
-	// Loads BinSprites from a raw binary data vector.
-	pub fn load_sprite_data(bin_data: &Vec<u8>) -> Option<Gd<BinSprite>> {
-		let sprite_data: SpriteData;
-
-		match sprite_get::get_bin_data(&bin_data) {
-			None => return None,
-			Some(data) => {
-				if data.width == 0 || data.height == 0 {
-					return None;
-				}
-				
-				sprite_data = data;
-			}
-		}
-
-		let sprite_image = Image::create_from_data(
-			// Dimensions
-			sprite_data.width as i32,
-			sprite_data.height as i32,
-			// Mipmapping
-			false,
-			// Grayscale format
-			Format::L8,
-			// Pixel array
-			&PackedByteArray::from(sprite_data.pixels.clone())
-		);
-		
-		match sprite_image {
-			Some(image) => return Some(BinSprite::new_from_data(
-				PackedByteArray::from(sprite_data.pixels),
-				sprite_data.width,
-				sprite_data.height,
-				image,
-				sprite_data.bit_depth,
-				//PackedByteArray::from(sprite_data.palette)
-				BinPalette::from_vector(sprite_data.palette),
-			)),
-			
-			_ => {
-				return None;
-			}
 		}
 	}
 	
@@ -176,7 +133,8 @@ impl SpriteLoadSave {
 			
 			// Get data
 			let binding = gd_sprite.bind();
-			buffer.write_all(binding.to_bin().as_slice()).unwrap();
+			//buffer.write_all(binding.to_bin().as_slice()).unwrap();
+			let _ = buffer.write_all(binding.serialize().as_slice());
 			let _ = buffer.flush();
 			
 			sprite_number += 1;

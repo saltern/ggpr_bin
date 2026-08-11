@@ -47,7 +47,7 @@ pub fn transform_index(mut value: u8) -> u8 {
 }
 
 
-pub fn indexed_as_rgb(input_pixels: Vec<u8>, palette: &Vec<u8>) -> Vec<u8> {
+pub fn indexed_as_rgb(input_pixels: Vec<u8>, palette: Vec<u8>) -> Vec<u8> {
 	let mut output_pixels: Vec<u8> = Vec::new();
 	
 	for pixel in 0..input_pixels.len() {
@@ -162,13 +162,23 @@ pub fn align_to_4(input_pixels: Vec<u8>, height: usize) -> Vec<u8> {
 }
 
 
-pub fn trim_padding(input_pixels: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+pub fn trim_padding(input_pixels: Vec<u8>, width: usize, height: usize, reverse: bool) -> Vec<u8> {
 	let mut output_pixels: Vec<u8> = Vec::new();
 	let row_width: usize = input_pixels.len() / height;
+
+	if reverse {
+		for y in (0..height).rev() {
+			for x in 0..width {
+				output_pixels.push(input_pixels[y * row_width + x]);
+			}
+		}
+	}
 	
-	for y in 0..height {
-		for x in 0..width {
-			output_pixels.push(input_pixels[y * row_width + x]);
+	else {
+		for y in 0..height {
+			for x in 0..width {
+				output_pixels.push(input_pixels[y * row_width + x]);
+			}
 		}
 	}
 	

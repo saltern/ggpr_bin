@@ -1,3 +1,4 @@
+use crate::{Deserialization, Serialization};
 use std::io::Write;
 use std::io::BufWriter;
 use std::fs;
@@ -9,9 +10,9 @@ use std::cmp::min;
 use godot::prelude::*;
 
 use crate::bin_identify::*;
+use crate::bin_sprite;
 use crate::bin_sprite::BinSprite;
 use crate::bin_cell::Cell;
-use crate::bin_palette::BinPalette;
 use crate::bin_script::*;
 use crate::bin_decrypt::*;
 use crate::sprite_load_save::SpriteLoadSave;
@@ -34,7 +35,7 @@ struct Scriptable {
 	cells: Array<Gd<Cell>>,
 	sprites: Array<Gd<BinSprite>>,
 	scripts: Gd<BinScript>,
-	palettes: Array<Gd<BinPalette>>,
+	palettes: Array<Gd<BinSprite>>,
 }
 
 
@@ -274,10 +275,10 @@ impl BinResource {
 			palette_path.push("palettes");
 			
 			if palette_path.exists() {
-				let mut palette_array: Array<Gd<BinPalette>> = Array::new();
+				let mut palette_array: Array<Gd<BinSprite>> = Array::new();
 				
 				for item in Self::get_file_vector(palette_path) {
-					match BinPalette::from_bin_file_pathbuf(item) {
+					match bin_sprite::load_from_file(&item, true) {
 						Some(palette) => palette_array.push(&palette),
 						_ => (),
 					}
@@ -365,7 +366,7 @@ impl BinResource {
 
 
 				ObjectType::Sprite => {
-					let sprite = SpriteLoadSave::load_sprite_data(object_bin_data);
+					let sprite = BinSprite::deserialize(object_bin_data);
 					let mut array: Array<Gd<BinSprite>> = Array::new();
 					
 					match sprite {
@@ -537,7 +538,7 @@ impl BinResource {
 				sprite_bin_data = bin_data[header_pointers[sprite]..header_pointers[sprite + 1]].to_vec();
 			}
 			
-			match SpriteLoadSave::load_sprite_data(&sprite_bin_data) {
+			match BinSprite::deserialize(&sprite_bin_data) {
 				Some(bin_sprite) => sprites.push(&bin_sprite),
 				_ => sprites.push(&BinSprite::new_gd()),
 			}
@@ -628,7 +629,8 @@ impl BinResource {
 				end = pointers[2];
 			}
 			
-			match SpriteLoadSave::load_sprite_data(&bin_data[start..end].to_vec()) {
+			//match SpriteLoadSave::load_sprite_data(&bin_data[start..end].to_vec()) {
+			match BinSprite::deserialize(&bin_data[start..end].to_vec()) {
 				Some(sprite) => {
 					sprites.push(&sprite);
 				},
@@ -659,8 +661,8 @@ impl BinResource {
 	}
 	
 	
-	fn load_palettes(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Array<Gd<BinPalette>> {
-		let mut palettes: Array<Gd<BinPalette>> = Array::new();
+	fn load_palettes(bin_data: &Vec<u8>, pointers: &Vec<usize>) -> Array<Gd<BinSprite>> {
+		let mut palettes: Array<Gd<BinSprite>> = Array::new();
 		
 		// Load palettes
 		if pointers.len() < 4 {
@@ -672,9 +674,10 @@ impl BinResource {
 			let cursor: usize = pointers[3] + palette;
 			let palette_data: Vec<u8> = bin_data[cursor..cursor + 0x410].to_vec();
 			
-			match BinPalette::from_bin_data(palette_data) {
+			//match BinPalette::from_bin_data(palette_data) {
+			match BinSprite::deserialize(&palette_data) {
 				Some(palette) => palettes.push(&palette),
-				None => palettes.push(&BinPalette::new_gd()),
+				None => palettes.push(&BinSprite::new_gd()),
 			}
 		}
 		
@@ -699,7 +702,7 @@ impl BinResource {
 				sprite_data = bin_data[start..].to_vec();
 			}
 			
-			match SpriteLoadSave::load_sprite_data(&sprite_data) {
+			match BinSprite::deserialize(&sprite_data) {
 				Some(sprite) => {
 					sprites.push(&sprite);
 				},
@@ -931,7 +934,7 @@ impl BinResource {
 					Variant::from("Palettes"),
 				]);
 
-				let palette_array: Array<Gd<BinPalette>> = object_dict.at("palettes").to();
+				let palette_array: Array<Gd<BinSprite>> = object_dict.at("palettes").to();
 				Self::save_palettes_to_path(palette_array, &object_path, reference);
 			}
 		}
@@ -994,7 +997,7 @@ impl BinResource {
 			match File::create(&target_file) {
 				Ok(mut file) => {
 					let sprite = gd_sprite.bind();
-					match file.write(sprite.to_bin().as_slice()) {
+					match file.write(sprite.serialize().as_slice()) {
 						Ok(_t) => (),
 						_ => godot_print!(
 							"bin_resource::save_sprites_to_path(): Failed to write sprite_{}.bin!",
@@ -1027,7 +1030,7 @@ impl BinResource {
 
 
 	fn save_palettes_to_path(
-		palette_array: Array<Gd<BinPalette>>, path: &String, global_signals: &mut Gd<Node>
+		palette_array: Array<Gd<BinSprite>>, path: &String, global_signals: &mut Gd<Node>
 	)
 	{
 		let mut path_buf: PathBuf = PathBuf::from(path);
@@ -1047,8 +1050,18 @@ impl BinResource {
 
 			let item = palette_array.at(palette_number);
 			let palette = item.bind();
-			
-			palette.to_bin_file(format!("{path}/../palettes/pal_{palette_number}.bin"));
+
+			let n_path = format!("{path}/../palettes/pal_{palette_number}.bin");
+
+			match File::create(&n_path) {
+				Ok(file) => {
+					let ref mut buffer = BufWriter::new(file);
+					let _ = buffer.write_all(palette.serialize().as_slice());
+					let _ = buffer.flush();
+				},
+
+				_ => (),
+			}
 		}
 	}
 	
@@ -1101,7 +1114,7 @@ impl BinResource {
 
 			pointer_vector.push(sprite_vector.len() as u32 + offset);
 			let sprite: Gd<BinSprite> = sprite_array.at(item);
-			sprite_vector.extend(sprite.bind().to_bin());
+			sprite_vector.extend(sprite.bind().serialize());
 		}
 		
 		return (pointer_vector, sprite_vector);
@@ -1133,7 +1146,7 @@ impl BinResource {
 	
 	
 	fn get_palette_block(
-		palette_array: Array<Gd<BinPalette>>, global_signals: &mut Gd<Node>
+		palette_array: Array<Gd<BinSprite>>, global_signals: &mut Gd<Node>
 	) -> (Vec<u32>, Vec<u8>)
 	{
 		let mut pointer_vector: Vec<u32> = Vec::new();
@@ -1148,8 +1161,8 @@ impl BinResource {
 			);
 
 			pointer_vector.push(palette_vector.len() as u32);
-			let palette: Gd<BinPalette> = palette_array.at(item);
-			palette_vector.extend(palette.bind().to_bin());
+			let palette: Gd<BinSprite> = palette_array.at(item);
+			palette_vector.extend(palette.bind().serialize());
 		}
 		
 		return (pointer_vector, palette_vector);
@@ -1162,7 +1175,7 @@ impl BinResource {
 	fn get_bin_sprite(dictionary: Dictionary<Variant, Variant>) -> Vec<u8> {
 		let sprite_array: Array<Gd<BinSprite>> = dictionary.at("sprites").to();
 		let sprite: Gd<BinSprite> = sprite_array.at(0);
-		return sprite.bind().to_bin();
+		return sprite.bind().serialize();
 	}
 	
 	
@@ -1349,7 +1362,7 @@ impl BinResource {
 		
 		match dictionary.get("palettes") {
 			Some(value) => {
-				let palette_array: Array<Gd<BinPalette>> = value.to();
+				let palette_array: Array<Gd<BinSprite>> = value.to();
 				let palette_tuple: (Vec<u32>, Vec<u8>) = Self::get_palette_block(
 					palette_array, global_signals
 				);

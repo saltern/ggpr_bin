@@ -364,7 +364,7 @@ impl Cell {
 
 			single_dict.set("x_offset", 0);
 			single_dict.set("y_offset", 0);
-			single_dict.set("texture", &sprite_ref.texture.clone().unwrap());
+			//single_dict.set("texture", &sprite_ref.texture.clone().unwrap());
 			return_dict.set(0, &single_dict);
 
 			return return_dict;
@@ -374,23 +374,23 @@ impl Cell {
 		let mut dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 
 		// Allocate pow2 texture like +R does...
-		let pow2_width = sprite_ref.width.next_power_of_two() as isize;
-		let pow2_height = sprite_ref.height.next_power_of_two() as isize;
+		let pow2_width = sprite_ref.get_width().next_power_of_two() as isize;
+		let pow2_height = sprite_ref.get_height().next_power_of_two() as isize;
 
 		let mut pow2_src_pixels: Vec<u8> = Vec::with_capacity((pow2_width * pow2_height) as usize);
 
 		// Blit source sprite into pow2 texture
-		for row in 0..sprite_ref.height as usize {
-			for col in 0..sprite_ref.width as usize {
-				pow2_src_pixels.push(sprite_ref.pixels[row * sprite_ref.width as usize + col]);
+		for row in 0..sprite_ref.get_height() as usize {
+			for col in 0..sprite_ref.get_width() as usize {
+				pow2_src_pixels.push(sprite_ref.get_pixels()[row * sprite_ref.get_width() as usize + col]);
 			}
 
-			for _col in sprite_ref.width as isize..pow2_width {
+			for _col in sprite_ref.get_width() as isize..pow2_width {
 				pow2_src_pixels.push(0x00);
 			}
 		}
 
-		for _row in sprite_ref.height as isize..pow2_height {
+		for _row in sprite_ref.get_height() as isize..pow2_height {
 			for _col in 0..pow2_width {
 				pow2_src_pixels.push(0x00);
 			}
@@ -403,8 +403,8 @@ impl Cell {
 			let region_x = region.x_offset as isize;
 			let region_y = region.y_offset as isize;
 
-			let sprite_width = sprite_ref.width as isize;
-			let sprite_height = sprite_ref.height as isize;
+			let sprite_width = sprite_ref.get_width() as isize;
+			let sprite_height = sprite_ref.get_height() as isize;
 
 			// Get sampling origin coords with weird +R mixed system
 			let x_origin: isize;
@@ -516,9 +516,9 @@ impl Cell {
 		// Sprite
 		if !have_type_3 {
 			u = min(u, sprite_y);
-			d = max(d, sprite_y + sprite_ref.height as i32);
+			d = max(d, sprite_y + sprite_ref.get_height() as i32);
 			l = min(l, sprite_x);
-			r = max(r, sprite_x + sprite_ref.width as i32);
+			r = max(r, sprite_x + sprite_ref.get_width() as i32);
 		}
 
 		// Origin
@@ -788,7 +788,7 @@ impl Cell {
 		pixel_vector = Self::layer_write_sprite(
 			pixel_vector, min_x, min_y, image_w,
 			sprite_pieces, self.sprite_x_offset as i32, self.sprite_y_offset as i32,
-			sprite_ref.bit_depth, palette
+			sprite_ref.get_bit_depth(), palette
 		).0;
 
 		// Write boxes
@@ -847,7 +847,7 @@ impl Cell {
 		(sprite_layer, sprite_rect) = Self::layer_write_sprite(
 			sprite_layer, min_x, min_y, image_w,
 			sprite_pieces, self.sprite_x_offset as i32, self.sprite_y_offset as i32,
-			sprite_ref.bit_depth, palette
+			sprite_ref.get_bit_depth(), palette
 		);
 
 		layer_vector.push(("Sprite", sprite_layer, sprite_rect));

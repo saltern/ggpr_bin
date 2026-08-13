@@ -6,8 +6,8 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use godot::prelude::*;
-use godot::classes::Image;
-use godot::classes::image::Format;
+//use godot::classes::Image;
+//use godot::classes::image::Format;
 
 use crate::bin_sprite;
 //use crate::bin_palette::BinPalette;

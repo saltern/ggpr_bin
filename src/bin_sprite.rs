@@ -1,19 +1,24 @@
-use crate::Identification;
-use crate::Serialization;
-use crate::Deserialization;
-
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::fs;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
+
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter};
 use bmp_rust::bmp::{BITMAPFILEHEADER, BMP, DIBHEADER};
-use godot::prelude::*;
-use crate::sprite_transform;
-
 use color_quant::NeuQuant;
+
+use godot::prelude::*;
+use godot::classes::ImageTexture;
+use godot::classes::Image;
+use godot::classes::image::Format;
+
+use crate::sprite_transform;
+use crate::Identification;
+use crate::Serialization;
+use crate::Deserialization;
+
 
 #[derive(Clone)]
 enum Mode {
@@ -101,6 +106,12 @@ const BMP_COLOR_32: usize = 4;
 // Quantization parameters
 const QUANT_DEFAULT_QUALITY: i32 = 10;
 
+// Cached image and texture parameters
+const IMAGE_EMPTY_W: i32 = 1;
+const IMAGE_EMPTY_H: i32 = 1;
+const IMAGE_MIPMAPS: bool = false;
+const IMAGE_FORMAT: Format = Format::L8;
+
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -128,18 +139,567 @@ pub struct BinSprite {
 	/// The sprite's embedded palette.
 	palette: Vec<u8>,
 	/// The sprite's pixel vector.
-	pixels: Vec<u8>
+	pixels: Vec<u8>,
+	/// Godot auxiliary: cached Image
+	#[export] image: Option<Gd<Image>>,
+	/// Godot auxiliary: cached ImageTexture
+	#[export] texture: Option<Gd<ImageTexture>>,
 }
 
 
 #[godot_api]
 impl BinSprite {
-	// MODE
-	pub fn get_mode(&self) -> &Mode {
-		return &self.mode;
+	// INIT AND LOAD
+	#[func]
+	pub fn init_empty_palette() -> Gd<Self> {
+		let data = &PackedArray::<u8>::from([0u8]);
+		let image = Image::create_from_data(
+			IMAGE_EMPTY_W, IMAGE_EMPTY_H, IMAGE_MIPMAPS, IMAGE_FORMAT, data
+		);
+		let texture = ImageTexture::create_from_image(image.to_godot());
+
+		return Gd::from_init_fn(|base| {
+			Self {
+				base,
+				mode: Mode::Palette,
+				clut: CLUT::Full,
+				bit_depth: DEPTH_8,
+				width: 0,
+				height: 0,
+				texture_width: 0,
+				texture_height: 0,
+				hash: 0,
+				manual_hash: false,
+				palette: vec![0u8; CLUT_SIZE_8_FULL],
+				pixels: vec![],
+				image,
+				texture,
+			}
+		})
 	}
-	
-	
+
+
+	#[func]
+	pub fn load_from_file(path: String, with_palette: bool) -> Option<Gd<Self>> {
+		let source_file: PathBuf = PathBuf::from(path);
+
+		match source_file.extension() {
+			Some(os_str) => match os_str.to_ascii_lowercase().to_str() {
+				Some("bin") => return Self::load_from_bin(source_file, with_palette),
+				Some("png") => return Self::load_from_png(source_file, with_palette),
+				Some("bmp") => return Self::load_from_bmp(source_file, with_palette),
+				Some("raw") => return Self::load_from_raw(source_file),
+				_ => {
+					println!("sprite_import_export::import_sprites() error: Invalid source format provided");
+					return None;
+				},
+			},
+
+			_ => {
+				println!("sprite_import_export::import_sprites() error: Invalid source format provided");
+				return None;
+			}
+		}
+	}
+
+
+	pub fn load_from_bin(source_file: PathBuf, with_palette: bool) -> Option<Gd<Self>> {
+		match fs::read(&source_file) {
+			Ok(data) => {
+				match BinSprite::deserialize(&data) {
+					Some(mut sprite) => {
+						if !with_palette {
+							sprite.bind_mut().purge_palette();
+						}
+
+						return Some(sprite);
+					}
+
+					_ => return None,
+				}
+			},
+
+			_ => return None,
+		}
+	}
+
+
+	pub fn load_from_png(source_file: PathBuf, with_palette: bool) -> Option<Gd<Self>> {
+		// Get info
+		let file: File;
+		match File::open(&source_file) {
+			Ok(value) => file = value,
+			_ => {
+				println!("bin_sprite::get_png() error: PNG file open error");
+				println!("\tSkipped: {}", &source_file.display());
+				return None;
+			},
+		}
+
+		let mut decoder = png::Decoder::new(file);
+		decoder.set_transformations(png::Transformations::STRIP_16);
+		let mut reader = decoder.read_info().unwrap();
+
+		let mut bit_depth: u16 = 8;
+		match reader.info().bit_depth {
+			png::BitDepth::One => bit_depth = 1,
+			png::BitDepth::Two => bit_depth = 2,
+			png::BitDepth::Four => bit_depth = DEPTH_4,
+			_ => (),
+		}
+
+		let mut palette: Vec<u8> = Vec::new();
+
+		// Get bytes
+		let mut buffer = vec![0; reader.output_buffer_size()];
+		let frame = reader.next_frame(&mut buffer).unwrap();
+
+		let source_bytes: Vec<u8> = buffer[..frame.buffer_size()].to_vec();
+		let mut pixel_vector: Vec<u8> = Vec::new();
+
+		// Transfer color indices to pixel_vector
+		match reader.info().color_type {
+			png::ColorType::Grayscale => {
+				if with_palette {
+					let max: usize;
+
+					if bit_depth == DEPTH_8 {
+						max = COLOR_COUNT_8_FULL;
+					} else {
+						max = COLOR_COUNT_4_FULL;
+					}
+
+					for i in 0..max {
+						palette.extend_from_slice(&[i as u8, i as u8, i as u8, 0xFF]);
+					}
+				}
+
+				pixel_vector = source_bytes;
+			},
+
+			png::ColorType::Indexed => {
+				if with_palette
+				{
+					match &reader.info().palette {
+						Some(pal_data) => {
+							let temp_pal: Vec<u8> = pal_data.to_vec();
+							let color_count: usize = temp_pal.len() / 3;
+							let mut alpha_vec: Vec<u8> = Vec::new();
+
+							match &reader.info().trns {
+								Some(alpha) => alpha_vec = alpha.to_vec(),
+								_ => (),
+							}
+
+							alpha_vec.resize(color_count, 0x80);
+							palette = vec![0; color_count * 4];
+
+							for index in 0..color_count {
+								palette[4 * index + 0] = temp_pal[3 * index + 0];
+								palette[4 * index + 1] = temp_pal[3 * index + 1];
+								palette[4 * index + 2] = temp_pal[3 * index + 2];
+								palette[4 * index + 3] = alpha_vec[index];
+							}
+						}
+
+						_ => (),
+					}
+				}
+
+				pixel_vector = source_bytes;
+			}
+
+			png::ColorType::GrayscaleAlpha => {
+				if with_palette {
+					let max: usize;
+
+					if bit_depth == DEPTH_8 {
+						max = COLOR_COUNT_8_FULL;
+					} else {
+						max = COLOR_COUNT_4_FULL;
+					}
+
+					for i in 0..max {
+						palette.extend_from_slice(&[i as u8, i as u8, i as u8, 0xFF]);
+					}
+
+					for pixel in 0..source_bytes.len() / 2 {
+						let index: usize = source_bytes[2 * pixel + 0] as usize;
+						let alpha: u8 = source_bytes[2 + pixel + 1];
+						palette[index] = alpha;
+					}
+				}
+				else {
+					println!("Note: PNG has color type grayscale with alpha, will discard alpha");
+					println!("\tFile: {}", &source_file.display());
+				}
+
+				for pixel in 0..source_bytes.len() / 2 {
+					pixel_vector.push(source_bytes[pixel * 2]);
+				}
+			},
+
+			png::ColorType::Rgb => {
+				if with_palette {
+					let mut rgba: Vec<u8> = Vec::new();
+
+					for pixel in 0..source_bytes.len() / 3 {
+						rgba.push(source_bytes[3 * pixel + 0]);
+						rgba.push(source_bytes[3 * pixel + 1]);
+						rgba.push(source_bytes[3 * pixel + 2]);
+						rgba.push(0xFF);
+					}
+
+					(palette, pixel_vector) = quantize(rgba, bit_depth, QUANT_DEFAULT_QUALITY);
+				}
+
+				else {
+					println!("Note: PNG has color type RGB, will use red channel as grayscale");
+					println!("\tFile: {}", &source_file.display());
+					for pixel in 0..source_bytes.len() / 3 {
+						pixel_vector.push(source_bytes[pixel * 3]);
+					}
+				}
+			},
+
+			png::ColorType::Rgba => {
+				if with_palette {
+					(palette, pixel_vector) = quantize(source_bytes, bit_depth, QUANT_DEFAULT_QUALITY);
+				}
+
+				else {
+					println!("Note: PNG has color type RGBA, will use red channel as grayscale and discard alpha");
+					println!("\tFile: {}", &source_file.display());
+					for pixel in 0..source_bytes.len() / 4 {
+						pixel_vector.push(source_bytes[pixel * 4]);
+					}
+				}
+			},
+		}
+
+		// Bit depth management
+		match bit_depth {
+			1 => pixel_vector = sprite_transform::bpp_from_1(pixel_vector),
+			2 => pixel_vector = sprite_transform::bpp_from_2(pixel_vector),
+			4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector, false),
+			_ => (),	// Hope and pray
+		}
+
+		if bit_depth < DEPTH_8
+		{ bit_depth = DEPTH_4 }
+		else
+		{ bit_depth = DEPTH_8 }
+
+		let clut: CLUT;
+
+		if palette.is_empty() {
+			clut = CLUT::None;
+		} else {
+			match bit_depth {
+				DEPTH_4 => {
+					if palette.len() <= CLUT_SIZE_4_FULL {
+						clut = CLUT::Half;
+						palette.resize(CLUT_SIZE_4_HALF, 0u8);
+					} else {
+						clut = CLUT::Full;
+						palette.resize(CLUT_SIZE_4_FULL, 0u8);
+					}
+				},
+
+				_ => {
+					if palette.len() <= CLUT_SIZE_8_HALF {
+						clut = CLUT::Half;
+						palette.resize(CLUT_SIZE_8_HALF, 0u8);
+					}
+					else {
+						clut = CLUT::Full;
+						palette.resize(CLUT_SIZE_8_FULL, 0u8);
+					}
+				}
+			}
+		}
+
+		let width: u16 = reader.info().width as u16;
+		let height: u16 = reader.info().height as u16;
+
+		let data = &PackedArray::<u8>::from(pixel_vector.clone());
+
+		let image = Image::create_from_data(
+			width as i32, height as i32, IMAGE_MIPMAPS, IMAGE_FORMAT, data
+		);
+
+		let texture = ImageTexture::create_from_image(image.to_godot());
+
+		return Some(Gd::from_init_fn(|base| {
+			BinSprite {
+				base,
+				mode: Mode::ACPR,
+				bit_depth,
+				clut,
+				width,
+				height,
+				texture_width: get_texture_size(width),
+				texture_height: get_texture_size(height),
+				hash: generate_hash(&pixel_vector),
+				manual_hash: false,
+				palette,
+				pixels: pixel_vector,
+				image,
+				texture,
+			}
+		}));
+	}
+
+
+	pub fn load_from_bmp(source_file: PathBuf, with_palette: bool) -> Option<Gd<Self>> {
+		// Not using BMP::new_from_file as it does not account for
+		// failing to read from a file and will panic if it does
+		let mut palette: Vec<u8> = vec![];
+
+		// File read
+		let bytes: Vec<u8>;
+		match fs::read(&source_file) {
+			Ok(value) => bytes = value,
+			_ => {
+				println!("bin_sprite::load_from_bmp() error: BMP file read error");
+				println!("\tSkipped: {}", &source_file.display());
+				return None;
+			},
+		}
+
+		let mut bmp: BMP = BMP::new(50i32, 50u32, Some([0u8, 0u8, 0u8, 0u8]));
+		bmp.contents = bytes;
+
+		// Header reads
+		let file_header: BITMAPFILEHEADER = BMP::get_header(&bmp);
+
+		let dib_header: DIBHEADER;
+		match BMP::get_dib_header(&bmp) {
+			Ok(header) => dib_header = header,
+			_ => {
+				println!("bin_sprite::load_from_bmp() error: Could not read DIB header");
+				println!("\tSkipped: {}", &source_file.display());
+				return None;
+			},
+		}
+
+		let width: usize = dib_header.width as usize;
+		let height: usize = dib_header.height.abs() as usize;
+		let mut bit_depth: u16 = dib_header.bitcount;
+
+		// Cheers Wikipedia
+		let row_size: usize = ((bit_depth as usize * width + 31) / 32) * 4;
+		let pixel_array_len: usize = row_size * height;
+
+		let start: usize = file_header.bfOffBits as usize;
+
+		let mut pixel_array: Vec<u8> = vec![0; pixel_array_len];
+		pixel_array.copy_from_slice(&bmp.contents[start..start + pixel_array_len]);
+
+		// Bit depth handling
+		match dib_header.bitcount {
+			1 => {
+				pixel_array = sprite_transform::bpp_from_1(pixel_array);
+				bit_depth = DEPTH_4;
+			},
+
+			2 => {
+				pixel_array = sprite_transform::bpp_from_2(pixel_array);
+				bit_depth = DEPTH_4;
+			},
+
+			4 => pixel_array = sprite_transform::bpp_from_4(pixel_array, false),
+			8 => (),
+			_ => {
+				println!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
+				println!("\tSkipped: {}", &source_file.display());
+				return None;
+			},
+		}
+
+		// Trim padding
+		let mut pixel_vector = sprite_transform::trim_padding(pixel_array, width, height, true);
+
+		// Invalid BMP
+		if std::cmp::max(width, height) > u16::MAX as usize {
+			println!("bin_sprite::load_from_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
+			println!("\tSkipped: {}", &source_file.display());
+			return None;
+		}
+
+		if pixel_vector.len() != width * height {
+			println!("bin_sprite::load_from_bmp() error: bad BMP: pixel count mismatches image dimensions, result may differ");
+			println!("\tFile: {}", &source_file.display());
+			pixel_vector.resize(width * height, 0u8);
+		}
+
+		let clut: CLUT;
+		if with_palette {
+			let flags_offset: usize;
+			match dib_header.compression {
+				Some(value) => match &value as &str {
+					"BI_BITFIELDS" => flags_offset = 12,
+					"BI_ALPHABITFIELDS" => flags_offset = 16,
+					_ => flags_offset = 0,
+				},
+
+				None => flags_offset = 0,
+			}
+
+			// Bytes per palette color
+			let index: usize = 14 + dib_header.size as usize + flags_offset;
+			let color_size: usize;
+			if dib_header.size as usize == BITMAPCOREHEADER_SIZE {
+				color_size = BMP_COLOR_24;
+			}
+			else {
+				color_size = BMP_COLOR_32;
+			}
+
+			// How many colors to read from BMP color table
+			let color_count: usize;
+			match dib_header.ClrUsed {
+				Some(value) => match value {
+					0 => color_count = 2u16.pow(bit_depth as u32) as usize,
+					_ => color_count = value as usize,
+				},
+
+				None => color_count = 2u16.pow(bit_depth as u32) as usize,
+			}
+
+			// Populate palette
+			for color in 0..color_count {
+				palette[4 * color + 0] = bmp.contents[index + (color_size * color + 2)];
+				palette[4 * color + 1] = bmp.contents[index + (color_size * color + 1)];
+				palette[4 * color + 2] = bmp.contents[index + (color_size * color + 0)];
+
+				//
+				if color % 32 == 0 || (color as i32 - 8) % 32 == 0 && color != 8 {
+					palette[4 * color + 3] = 0x00;
+				}
+				else {
+					palette[4 * color + 3] = 0x80;
+				}
+			}
+
+			match bit_depth {
+				4 => {
+					if color_count <= 8
+					{ clut = CLUT::Half; }
+					else
+					{ clut = CLUT::Full; }
+				},
+
+				_ => {
+					if color_count <= 128
+					{ clut = CLUT::Half; }
+					else
+					{ clut = CLUT::Full; }
+				},
+			}
+		}
+		// No palette
+		else { clut = CLUT::None }
+
+		let data = &PackedArray::<u8>::from(pixel_vector.clone());
+		let image = Image::create_from_data(
+			width as i32, height as i32, IMAGE_MIPMAPS, IMAGE_FORMAT, data
+		);
+
+		let texture = ImageTexture::create_from_image(image.to_godot());
+
+		return Some(Gd::from_init_fn(|base| {
+			BinSprite {
+				base,
+				mode: Mode::ACPR,
+				clut,
+				bit_depth,
+				width: width as u16,
+				height: height as u16,
+				texture_width: get_texture_size(width as u16),
+				texture_height: get_texture_size(height as u16),
+				hash: generate_hash(&pixel_vector),
+				manual_hash: false,
+				palette,
+				pixels: pixel_vector,
+				image,
+				texture,
+			}
+		}));
+	}
+
+
+	pub fn load_from_raw(source_file: PathBuf) -> Option<Gd<BinSprite>> {
+		// Find if the RAW file has specified its dimensions
+		let mut width: u16 = 0;
+		let mut height: u16 = 0;
+
+		let file_name: String = source_file.file_stem().unwrap().to_str().unwrap().to_lowercase();
+		let file_name_pieces: Vec<&str> = file_name.split("-").collect();
+		let piece_count: usize = file_name_pieces.len();
+
+		for piece in 0..piece_count {
+			// Width
+			if file_name_pieces[piece] == "w" && piece + 1 < piece_count {
+				width = file_name_pieces[piece + 1].parse::<u16>().unwrap_or(0);
+			}
+
+			// Height
+			if file_name_pieces[piece] == "h" && piece + 1 < piece_count {
+				height = file_name_pieces[piece + 1].parse::<u16>().unwrap_or(0);
+			}
+		}
+
+		if width == 0 {
+			println!("Warning: will not process RAW as its width was not specified");
+			println!("\tSkipped: {}", &source_file.display());
+			return None;
+		}
+
+		if height == 0 {
+			println!("Warning: will not process RAW as its height was not specified");
+			println!("\tSkipped: {}", &source_file.display());
+			return None;
+		}
+
+		// All good, return raw data
+		match fs::read(&source_file) {
+			Ok(data) => {
+				let img_data = &PackedArray::<u8>::from(data.clone());
+				let image = Image::create_from_data(
+					width as i32, height as i32, IMAGE_MIPMAPS, IMAGE_FORMAT, img_data
+				);
+				let texture = ImageTexture::create_from_image(image.to_godot());
+
+				return Some(Gd::from_init_fn(|base| {
+					BinSprite {
+						base,
+						mode: Mode::ACPR,
+						clut: CLUT::None,
+						bit_depth: DEPTH_8,
+						width,
+						height,
+						texture_width: get_texture_size(width),
+						texture_height: get_texture_size(height),
+						hash: generate_hash(&data),
+						manual_hash: false,
+						palette: vec![],
+						pixels: data,
+						image,
+						texture,
+					}
+				}))
+			},
+
+			_ => {
+				println!("sprite_get::get_raw() error: RAW file read error");
+				println!("\tSkipped: {}", source_file.display());
+				return None;
+			},
+		}
+	}
+
+
 	pub fn set_mode(&mut self, mode: u16) {
 		match mode {
 			MODE_RAW => self.mode = Mode::Raw,
@@ -152,6 +712,7 @@ impl BinSprite {
 
 
 	// PALETTE
+	#[func]
 	pub fn has_palette(&self) -> bool {
 		match self.clut {
 			CLUT::None => return false,
@@ -162,6 +723,7 @@ impl BinSprite {
 	}
 
 
+	#[func]
 	pub fn get_palette(&self) -> Vec<u8> {
 		// Guard rail
 		match self.clut {
@@ -171,6 +733,7 @@ impl BinSprite {
 	}
 
 
+	#[func]
 	pub fn set_palette(&mut self, mut new_palette: Vec<u8>) {
 		new_palette.resize(4 * self.get_color_count(), 0u8);
 		self.palette = new_palette;
@@ -200,11 +763,14 @@ impl BinSprite {
 	}
 
 
-	pub fn get_color(&self, index: usize) -> (u8, u8, u8, u8) {
+	#[func]
+	pub fn get_color(&self, index: i64) -> Color {
+		let index = index as usize;
+
 		if index >= self.get_color_count() {
-			return (0, 0, 0, 0);
+			return Color::from_rgba8(0, 0, 0, 0);
 		} else {
-			return (
+			return Color::from_rgba8(
 				self.palette[4 * index + 0],
 				self.palette[4 * index + 1],
 				self.palette[4 * index + 2],
@@ -214,17 +780,18 @@ impl BinSprite {
 	}
 
 
-	pub fn set_color(&mut self, index: usize, color: (u8, u8, u8, u8)) {
+	#[func]
+	pub fn set_color(&mut self, index: i64, r: u8, g: u8, b: u8, a: u8) {
+		let index = index as usize;
+
 		if index >= self.get_color_count() {
 			return;
 		}
 
-		(
-			self.palette[4 * index + 0],
-			self.palette[4 * index + 1],
-			self.palette[4 * index + 2],
-			self.palette[4 * index + 3],
-		) = color;
+		self.palette[4 * index + 0] = r;
+		self.palette[4 * index + 1] = g;
+		self.palette[4 * index + 2] = b;
+		self.palette[4 * index + 3] = a;
 	}
 
 
@@ -236,44 +803,40 @@ impl BinSprite {
 
 	pub fn palette_halve_alpha(&mut self) {
 		for index in 0..self.get_color_count() {
-			let mut color = self.get_color(index);
+			let a: usize = 4 * index + 3;
 
-			if color.3 == 0xFF {
-				color.3 = 0x80;
+			if self.palette[a] == 0xFF {
+				self.palette[a] = 0x80;
 			} else {
-				color.3 /= 2;
+				self.palette[a] /= 2;
 			}
-
-			self.set_color(index, color);
 		}
 	}
 
 
 	pub fn palette_double_alpha(&mut self) {
 		for index in 0..self.get_color_count() {
-			let mut color = self.get_color(index);
+			let a: usize = 4 * index + 3;
 
-			if color.3 >= 0x80 {
-				color.3 = 0xFF;
+			if self.palette[a] >= 0x80 {
+				self.palette[a] = 0xFF;
 			} else {
-				color.3 *= 2;
+				self.palette[a] *= 2;
 			}
-
-			self.set_color(index, color);
 		}
 	}
 
 
 	pub fn palette_make_opaque(&mut self) {
 		for index in 0..self.get_color_count() {
-			let mut color = self.get_color(index);
-			color.3 = 0xFF;
-			self.set_color(index, color);
+			let a: usize = 4 * index + 3;
+			self.palette[a] = 0xFF;
 		}
 	}
 
 
 	// BIT DEPTH
+	#[func]
 	pub fn get_bit_depth(&self) -> u16 {
 		if self.bit_depth == DEPTH_4
 		{ return DEPTH_4; }
@@ -282,28 +845,43 @@ impl BinSprite {
 	}
 
 
+	#[func]
 	pub fn set_bit_depth_4(&mut self) {
 		self.bit_depth = DEPTH_4;
 	}
 
-	
+
+	#[func]
 	pub fn set_bit_depth_8(&mut self) {
 		self.bit_depth = DEPTH_8;
 	}
 
-	
+
 	// DIMENSIONS
+	#[func]
 	pub fn get_width(&self) -> u16 {
 		return self.width;
 	}
-	
-	
+
+
+	#[func]
 	pub fn get_height(&self) -> u16 {
 		return self.height;
 	}
-	
+
+
+	pub fn get_texture_width(&self) -> u16 {
+		return 2u16.pow(self.texture_width as u32);
+	}
+
+
+	pub fn get_texture_height(&self) -> u16 {
+		return 2u16.pow(self.texture_height as u32);
+	}
+
 
 	// PIXEL VECTOR
+	#[func]
 	pub fn get_pixels(&self) -> Vec<u8> {
 		return self.pixels.clone();
 	}
@@ -500,8 +1078,8 @@ impl BinSprite {
 
 		return bin_data;
 	}
-	
-	
+
+
 	// UTILS
 	pub fn clone(&self) -> Gd<Self> {
 		return Gd::from_init_fn(|base| {
@@ -518,15 +1096,34 @@ impl BinSprite {
 				manual_hash: self.manual_hash,
 				palette: self.get_palette(),
 				pixels: self.get_pixels(),
+				image: self.image.clone(),
+				texture: self.texture.clone(),
 			}
 		});
 	}
+
+/*
+	#[func]
+	pub fn get_image(&self) -> Option<Gd<Image>> {
+		return self.image.clone();
+	}
+
+
+	#[func]
+	pub fn get_texture(&self) -> Option<Gd<ImageTexture>> {
+		return self.texture.clone();
+	}
+ */
 }
 
 
 #[godot_api]
 impl IResource for BinSprite {
 	fn init(base: Base<Resource>) -> Self {
+		let data = &PackedArray::<u8>::from([0u8]);
+		let image = Image::create_from_data(IMAGE_EMPTY_W, IMAGE_EMPTY_H, IMAGE_MIPMAPS, IMAGE_FORMAT, data);
+		let texture = ImageTexture::create_from_image(image.to_godot());
+
 		Self {
 			base,
 			mode: Mode::ACPR,
@@ -540,6 +1137,8 @@ impl IResource for BinSprite {
 			manual_hash: false,
 			palette: Vec::new(),
 			pixels: Vec::new(),
+			image,
+			texture,
 		}
 	}
 }
@@ -637,7 +1236,7 @@ impl Deserialization for BinSprite {
 		if !Self::identify(&bin_data) {
 			return None;
 		}
-		
+
 		let mode: Mode;
 		let clut: CLUT;
 		let bit_depth: u16;
@@ -647,7 +1246,7 @@ impl Deserialization for BinSprite {
 		let texture_height: u16;
 		let hash: u16;
 		let palette: Vec<u8>;
-		let mut pixels: Vec<u8>;
+		let pixels: Vec<u8>;
 
 		let mut ggxp_compressed: bool = false;
 		let mut pal_size: usize;
@@ -776,7 +1375,7 @@ impl Deserialization for BinSprite {
 			Mode::Palette => pixels = Vec::new(),
 			Mode::Raw => pixels = pixel_data,
 			Mode::ACPR => pixels = decompress_acpr(bin_data),
-			Mode::Mode5 => pixels = decompress_mode5(bin_data),
+			Mode::Mode5 => pixels = decompress_mode5(&pixel_data),
 			Mode::GGXP => {
 				if ggxp_compressed { pixels = decompress_ggx(bin_data); }
 				else { pixels = pixel_data; }
@@ -785,6 +1384,12 @@ impl Deserialization for BinSprite {
 
 		// Finishing touches
 		//pixels = sprite_transform::trim_padding(pixels, width as usize, height as usize, false);
+
+		let data = &PackedArray::<u8>::from(pixels.clone());
+		let image = Image::create_from_data(
+			width as i32, height as i32, IMAGE_MIPMAPS, IMAGE_FORMAT, data
+		);
+		let texture = ImageTexture::create_from_image(image.to_godot());
 
 		return Some(Gd::from_init_fn(|base| {
 			Self {
@@ -800,32 +1405,11 @@ impl Deserialization for BinSprite {
 				manual_hash: false,
 				palette,
 				pixels,
+				image,
+				texture,
 			}
 		}));
 	}
-}
-
-
-// CREATION ========================================================================================
-
-
-pub fn init_empty_palette() -> Gd<BinSprite> {
-	return Gd::from_init_fn(|base| {
-		BinSprite {
-			base,
-			mode: Mode::Palette,
-			clut: CLUT::Full,
-			bit_depth: DEPTH_8,
-			width: 0,
-			height: 0,
-			texture_width: 0,
-			texture_height: 0,
-			hash: 0,
-			manual_hash: false,
-			palette: vec![0u8; CLUT_SIZE_8_FULL],
-			pixels: vec![],
-		}
-	})
 }
 
 
@@ -863,7 +1447,7 @@ pub fn generate_hash(bin_data: &Vec<u8>) -> u16 {
 
 // Palletization
 pub fn quantize(rgba: Vec<u8>, bit_depth: u16, quality_level: i32) -> (Vec<u8>, Vec<u8>) {
-	const QUALITY_LEVEL: i32 = 10;
+	//const QUALITY_LEVEL: i32 = 10;
 
 	let color_count: usize;
 	let palette: Vec<u8>;
@@ -1370,496 +1954,4 @@ pub fn decompress_ggx(bin_data: &Vec<u8>) -> Vec<u8> {
 		pointer += 0x01;
 	}
 	return pixel_vector;
-}
-
-
-// LOAD FROM FILE ==================================================================================
-
-
-pub fn load_from_file(source_file: &PathBuf, with_palette: bool) -> Option<Gd<BinSprite>> {
-	match source_file.extension() {
-		Some(os_str) => match os_str.to_ascii_lowercase().to_str() {
-			Some("bin") => return load_from_bin(source_file, with_palette),
-			Some("png") => return load_from_png(source_file, with_palette),
-			Some("bmp") => return load_from_bmp(source_file, with_palette),
-			Some("raw") => return load_from_raw(source_file),
-			_ => {
-				println!("sprite_import_export::import_sprites() error: Invalid source format provided");
-				return None;
-			},
-		},
-
-		_ => {
-			println!("sprite_import_export::import_sprites() error: Invalid source format provided");
-			return None;
-		}
-	}
-}
-
-
-pub fn load_from_bin(source_file: &PathBuf, with_palette: bool) -> Option<Gd<BinSprite>> {
-	match fs::read(&source_file) {
-		Ok(data) => {
-			match BinSprite::deserialize(&data) {
-				Some(mut sprite) => {
-					if !with_palette {
-						sprite.bind_mut().purge_palette();
-					}
-
-					return Some(sprite);
-				}
-				
-				_ => return None,
-			}
-		},
-		
-		_ => return None,
-	}
-}
-
-
-pub fn load_from_png(source_file: &PathBuf, with_palette: bool) -> Option<Gd<BinSprite>> {
-	// Get info
-	let file: File;
-	match File::open(&source_file) {
-		Ok(value) => file = value,
-		_ => {
-			println!("bin_sprite::get_png() error: PNG file open error");
-			println!("\tSkipped: {}", &source_file.display());
-			return None;
-		},
-	}
-
-	let mut decoder = png::Decoder::new(file);
-	decoder.set_transformations(png::Transformations::STRIP_16);
-	let mut reader = decoder.read_info().unwrap();
-
-	let mut bit_depth: u16 = 8;
-	match reader.info().bit_depth {
-		png::BitDepth::One => bit_depth = 1,
-		png::BitDepth::Two => bit_depth = 2,
-		png::BitDepth::Four => bit_depth = DEPTH_4,
-		_ => (),
-	}
-
-	let mut palette: Vec<u8> = Vec::new();
-
-	// Get bytes
-	let mut buffer = vec![0; reader.output_buffer_size()];
-	let frame = reader.next_frame(&mut buffer).unwrap();
-
-	let source_bytes: Vec<u8> = buffer[..frame.buffer_size()].to_vec();
-	let mut pixel_vector: Vec<u8> = Vec::new();
-
-	// Transfer color indices to pixel_vector
-	match reader.info().color_type {
-		png::ColorType::Grayscale => {
-			if with_palette {
-				let max: usize;
-
-				if bit_depth == DEPTH_8 {
-					max = COLOR_COUNT_8_FULL;
-				} else {
-					max = COLOR_COUNT_4_FULL;
-				}
-
-				for i in 0..max {
-					palette.extend_from_slice(&[i as u8, i as u8, i as u8, 0xFF]);
-				}
-			}
-
-			pixel_vector = source_bytes;
-		},
-
-		png::ColorType::Indexed => {
-			if with_palette
-			{
-				match &reader.info().palette {
-					Some(pal_data) => {
-						let temp_pal: Vec<u8> = pal_data.to_vec();
-						let color_count: usize = temp_pal.len() / 3;
-						let mut alpha_vec: Vec<u8> = Vec::new();
-
-						match &reader.info().trns {
-							Some(alpha) => alpha_vec = alpha.to_vec(),
-							_ => (),
-						}
-
-						alpha_vec.resize(color_count, 0x80);
-						palette = vec![0; color_count * 4];
-
-						for index in 0..color_count {
-							palette[4 * index + 0] = temp_pal[3 * index + 0];
-							palette[4 * index + 1] = temp_pal[3 * index + 1];
-							palette[4 * index + 2] = temp_pal[3 * index + 2];
-							palette[4 * index + 3] = alpha_vec[index];
-						}
-					}
-
-					_ => (),
-				}
-			}
-
-			pixel_vector = source_bytes;
-		}
-
-		png::ColorType::GrayscaleAlpha => {
-			if with_palette {
-				let max: usize;
-
-				if bit_depth == DEPTH_8 {
-					max = COLOR_COUNT_8_FULL;
-				} else {
-					max = COLOR_COUNT_4_FULL;
-				}
-
-				for i in 0..max {
-					palette.extend_from_slice(&[i as u8, i as u8, i as u8, 0xFF]);
-				}
-
-				for pixel in 0..source_bytes.len() / 2 {
-					let index: usize = source_bytes[2 * pixel + 0] as usize;
-					let alpha: u8 = source_bytes[2 + pixel + 1];
-					palette[index] = alpha;
-				}
-			}
-			else {
-				println!("Note: PNG has color type grayscale with alpha, will discard alpha");
-				println!("\tFile: {}", &source_file.display());
-			}
-
-			for pixel in 0..source_bytes.len() / 2 {
-				pixel_vector.push(source_bytes[pixel * 2]);
-			}
-		},
-
-		png::ColorType::Rgb => {
-			if with_palette {
-				let mut rgba: Vec<u8> = Vec::new();
-
-				for pixel in 0..source_bytes.len() / 3 {
-					rgba.push(source_bytes[3 * pixel + 0]);
-					rgba.push(source_bytes[3 * pixel + 1]);
-					rgba.push(source_bytes[3 * pixel + 2]);
-					rgba.push(0xFF);
-				}
-
-				(palette, pixel_vector) = quantize(rgba, bit_depth, QUANT_DEFAULT_QUALITY);
-			}
-
-			else {
-				println!("Note: PNG has color type RGB, will use red channel as grayscale");
-				println!("\tFile: {}", &source_file.display());
-				for pixel in 0..source_bytes.len() / 3 {
-					pixel_vector.push(source_bytes[pixel * 3]);
-				}
-			}
-		},
-
-		png::ColorType::Rgba => {
-			if with_palette {
-				(palette, pixel_vector) = quantize(source_bytes, bit_depth, QUANT_DEFAULT_QUALITY);
-			}
-
-			else {
-				println!("Note: PNG has color type RGBA, will use red channel as grayscale and discard alpha");
-				println!("\tFile: {}", &source_file.display());
-				for pixel in 0..source_bytes.len() / 4 {
-					pixel_vector.push(source_bytes[pixel * 4]);
-				}
-			}
-		},
-	}
-
-	// Bit depth management
-	match bit_depth {
-		1 => pixel_vector = sprite_transform::bpp_from_1(pixel_vector),
-		2 => pixel_vector = sprite_transform::bpp_from_2(pixel_vector),
-		4 => pixel_vector = sprite_transform::bpp_from_4(pixel_vector, false),
-		_ => (),	// Hope and pray
-	}
-
-	if bit_depth < DEPTH_8
-	{ bit_depth = DEPTH_4 }
-	else
-	{ bit_depth = DEPTH_8 }
-
-	let clut: CLUT;
-
-	if palette.is_empty() {
-		clut = CLUT::None;
-	} else {
-		match bit_depth {
-			DEPTH_4 => {
-				if palette.len() <= CLUT_SIZE_4_FULL {
-					clut = CLUT::Half;
-					palette.resize(CLUT_SIZE_4_HALF, 0u8);
-				} else {
-					clut = CLUT::Full;
-					palette.resize(CLUT_SIZE_4_FULL, 0u8);
-				}
-			},
-			
-			_ => {
-				if palette.len() <= CLUT_SIZE_8_HALF {
-					clut = CLUT::Half;
-					palette.resize(CLUT_SIZE_8_HALF, 0u8);
-				}
-				else {
-					clut = CLUT::Full;
-					palette.resize(CLUT_SIZE_8_FULL, 0u8);
-				}
-			}
-		}
-	}
-
-	let width: u16 = reader.info().width as u16;
-	let height: u16 = reader.info().height as u16;
-
-	return Some(Gd::from_init_fn(|base| {
-		BinSprite {
-			base,
-			mode: Mode::ACPR,
-			bit_depth,
-			clut,
-			width,
-			height,
-			texture_width: get_texture_size(width),
-			texture_height: get_texture_size(height),
-			hash: generate_hash(&pixel_vector),
-			manual_hash: false,
-			palette,
-			pixels: pixel_vector,
-		}
-	}));
-}
-
-
-pub fn load_from_bmp(source_file: &PathBuf, with_palette: bool) -> Option<Gd<BinSprite>> {
-	// Not using BMP::new_from_file as it does not account for
-	// failing to read from a file and will panic if it does
-	let mut palette: Vec<u8> = vec![];
-
-	// File read
-	let bytes: Vec<u8>;
-	match fs::read(source_file) {
-		Ok(value) => bytes = value,
-		_ => {
-			println!("bin_sprite::load_from_bmp() error: BMP file read error");
-			println!("\tSkipped: {}", &source_file.display());
-			return None;
-		},
-	}
-
-	let mut bmp: BMP = BMP::new(50i32, 50u32, Some([0u8, 0u8, 0u8, 0u8]));
-	bmp.contents = bytes;
-
-	// Header reads
-	let file_header: BITMAPFILEHEADER = BMP::get_header(&bmp);
-
-	let dib_header: DIBHEADER;
-	match BMP::get_dib_header(&bmp) {
-		Ok(header) => dib_header = header,
-		_ => {
-			println!("bin_sprite::load_from_bmp() error: Could not read DIB header");
-			println!("\tSkipped: {}", &source_file.display());
-			return None;
-		},
-	}
-
-	let width: usize = dib_header.width as usize;
-	let height: usize = dib_header.height.abs() as usize;
-	let mut bit_depth: u16 = dib_header.bitcount;
-
-	// Cheers Wikipedia
-	let row_size: usize = ((bit_depth as usize * width + 31) / 32) * 4;
-	let pixel_array_len: usize = row_size * height;
-
-	let start: usize = file_header.bfOffBits as usize;
-
-	let mut pixel_array: Vec<u8> = vec![0; pixel_array_len];
-	pixel_array.copy_from_slice(&bmp.contents[start..start + pixel_array_len]);
-
-	// Bit depth handling
-	match dib_header.bitcount {
-		1 => {
-			pixel_array = sprite_transform::bpp_from_1(pixel_array);
-			bit_depth = DEPTH_4;
-		},
-
-		2 => {
-			pixel_array = sprite_transform::bpp_from_2(pixel_array);
-			bit_depth = DEPTH_4;
-		},
-
-		4 => pixel_array = sprite_transform::bpp_from_4(pixel_array, false),
-		8 => (),
-		_ => {
-			println!("Warning: Skipping BMP as its color depth is not supported ({})", dib_header.bitcount);
-			println!("\tSkipped: {}", &source_file.display());
-			return None;
-		},
-	}
-
-	// Trim padding
-	let mut pixel_vector = sprite_transform::trim_padding(pixel_array, width, height, true);
-
-	// Invalid BMP
-	if std::cmp::max(width, height) > u16::MAX as usize {
-		println!("bin_sprite::load_from_bmp() error: image dimensions exceed sprite maximum of 65535px per side");
-		println!("\tSkipped: {}", &source_file.display());
-		return None;
-	}
-
-	if pixel_vector.len() != width * height {
-		println!("bin_sprite::load_from_bmp() error: bad BMP: pixel count mismatches image dimensions, result may differ");
-		println!("\tFile: {}", &source_file.display());
-		pixel_vector.resize(width * height, 0u8);
-	}
-
-	let clut: CLUT;
-	if with_palette {
-		let flags_offset: usize;
-		match dib_header.compression {
-			Some(value) => match &value as &str {
-				"BI_BITFIELDS" => flags_offset = 12,
-				"BI_ALPHABITFIELDS" => flags_offset = 16,
-				_ => flags_offset = 0,
-			},
-
-			None => flags_offset = 0,
-		}
-
-		// Bytes per palette color
-		let index: usize = 14 + dib_header.size as usize + flags_offset;
-		let color_size: usize;
-		if dib_header.size as usize == BITMAPCOREHEADER_SIZE {
-			color_size = BMP_COLOR_24;
-		}
-		else {
-			color_size = BMP_COLOR_32;
-		}
-
-		// How many colors to read from BMP color table
-		let color_count: usize;
-		match dib_header.ClrUsed {
-			Some(value) => match value {
-				0 => color_count = 2u16.pow(bit_depth as u32) as usize,
-				_ => color_count = value as usize,
-			},
-
-			None => color_count = 2u16.pow(bit_depth as u32) as usize,
-		}
-
-		// Populate palette
-		for color in 0..color_count {
-			palette[4 * color + 0] = bmp.contents[index + (color_size * color + 2)];
-			palette[4 * color + 1] = bmp.contents[index + (color_size * color + 1)];
-			palette[4 * color + 2] = bmp.contents[index + (color_size * color + 0)];
-
-			//
-			if color % 32 == 0 || (color as i32 - 8) % 32 == 0 && color != 8 {
-				palette[4 * color + 3] = 0x00;
-			}
-			else {
-				palette[4 * color + 3] = 0x80;
-			}
-		}
-
-		match bit_depth {
-			4 => {
-				if color_count <= 8
-				{ clut = CLUT::Half; }
-				else
-				{ clut = CLUT::Full; }
-			},
-
-			_ => {
-				if color_count <= 128
-				{ clut = CLUT::Half; }
-				else
-				{ clut = CLUT::Full; }
-			},
-		}
-	}
-	// No palette
-	else { clut = CLUT::None }
-
-	return Some(Gd::from_init_fn(|base| {
-		BinSprite {
-			base,
-			mode: Mode::ACPR,
-			clut,
-			bit_depth,
-			width: width as u16,
-			height: height as u16,
-			texture_width: get_texture_size(width as u16),
-			texture_height: get_texture_size(height as u16),
-			hash: generate_hash(&pixel_vector),
-			manual_hash: false,
-			palette,
-			pixels: pixel_vector
-		}
-	}));
-}
-
-
-pub fn load_from_raw(source_file: &PathBuf) -> Option<Gd<BinSprite>> {
-	// Find if the RAW file has specified its dimensions
-	let mut width: u16 = 0;
-	let mut height: u16 = 0;
-
-	let file_name: String = source_file.file_stem().unwrap().to_str().unwrap().to_lowercase();
-	let file_name_pieces: Vec<&str> = file_name.split("-").collect();
-	let piece_count: usize = file_name_pieces.len();
-
-	for piece in 0..piece_count {
-		// Width
-		if file_name_pieces[piece] == "w" && piece + 1 < piece_count {
-			width = file_name_pieces[piece + 1].parse::<u16>().unwrap_or(0);
-		}
-
-		// Height
-		if file_name_pieces[piece] == "h" && piece + 1 < piece_count {
-			height = file_name_pieces[piece + 1].parse::<u16>().unwrap_or(0);
-		}
-	}
-
-	if width == 0 {
-		println!("Warning: will not process RAW as its width was not specified");
-		println!("\tSkipped: {}", &source_file.display());
-		return None;
-	}
-
-	if height == 0 {
-		println!("Warning: will not process RAW as its height was not specified");
-		println!("\tSkipped: {}", &source_file.display());
-		return None;
-	}
-
-	// All good, return raw data
-	match fs::read(source_file) {
-		Ok(data) => return Some(Gd::from_init_fn(|base| {
-			BinSprite {
-				base,
-				mode: Mode::ACPR,
-				clut: CLUT::None,
-				bit_depth: DEPTH_8,
-				width,
-				height,
-				texture_width: get_texture_size(width),
-				texture_height: get_texture_size(height),
-				hash: generate_hash(&data),
-				manual_hash: false,
-				palette: vec![],
-				pixels: data
-			}
-		})),
-
-		_ => {
-			println!("sprite_get::get_raw() error: RAW file read error");
-			println!("\tSkipped: {}", &source_file.display());
-			return None;
-		},
-	}
 }

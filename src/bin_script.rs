@@ -931,7 +931,7 @@ pub struct BinScript {
 
 			while !action_over && cursor < bin_data.len() {
 				let id = bin_data[cursor];
-				let entry: Dictionary<GString, Variant> = instruction_db.at(id).to();
+				let entry: Dictionary<Variant, Variant> = instruction_db.at(id).to();
 				cursor += 0x01;
 
 				// Add arguments

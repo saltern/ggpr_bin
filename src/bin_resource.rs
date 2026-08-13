@@ -10,7 +10,7 @@ use std::cmp::min;
 use godot::prelude::*;
 
 use crate::bin_identify::*;
-use crate::bin_sprite;
+//use crate::bin_sprite;
 use crate::bin_sprite::BinSprite;
 use crate::bin_cell::Cell;
 use crate::bin_script::*;
@@ -106,26 +106,20 @@ impl BinResource {
 				"error" => "Invalid file (too short)",
 			}
 		}
-		
-		if u32::from_le_bytes([
-			bin_data[data_length - 0x01], bin_data[data_length - 0x02],
-			bin_data[data_length - 0x03], bin_data[data_length - 0x04],
-		]) == ENCRYPTED_SIGNATURE {
-			return vdict! {
-				"error" => "Invalid file (encrypted)"
-			}
-		}
-		
+
+		godot_print!("get_objects()");
 		// Check if it's a spritelist first.
 		let mut sprite_list: bool = true;
 		let objects: Vec<Vec<u8>> = Self::get_objects(&bin_data);
-		
+
+		godot_print!("if objects.len() == 0");
 		if objects.len() == 0 {
 			return vdict! {
 				"error" => "Invalid file (no objects or decryption failed (wrong filename?))"
 			}
 		}
-		
+
+		godot_print!("SpriteList check");
 		for object in 0..objects.len() {
 			match identify_object(&objects[object]) {
 				ObjectType::Sprite => continue,
@@ -136,10 +130,12 @@ impl BinResource {
 				},
 			}
 		}
-		
+
 		if sprite_list {
+			godot_print!("Is a SpriteList");
 			return Self::load_sprite_list_file(bin_data);
 		} else {
+			godot_print!("Not a SpriteList");
 			return Self::load_resource_file(bin_data, instruction_db);
 		}
 	}
@@ -278,7 +274,7 @@ impl BinResource {
 				let mut palette_array: Array<Gd<BinSprite>> = Array::new();
 				
 				for item in Self::get_file_vector(palette_path) {
-					match bin_sprite::load_from_file(&item, true) {
+					match BinSprite::load_from_bin(item, true) {
 						Some(palette) => palette_array.push(&palette),
 						_ => (),
 					}

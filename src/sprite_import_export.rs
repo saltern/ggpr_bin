@@ -3,11 +3,11 @@ use std::io::BufWriter;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
-use std::ops::Deref;
+//use std::ops::Deref;
 
 use godot::prelude::*;
-use godot::classes::Image;
-use godot::classes::image::Format;
+//use godot::classes::Image;
+//use godot::classes::image::Format;
 
 use crate::{bin_sprite, Serialization};
 //use crate::bin_palette::BinPalette;
@@ -18,7 +18,7 @@ use crate::sprite_transform;
 use bin_sprite::BinSprite;
 //use sprite_compress::SpriteData;
 
-use color_quant::NeuQuant;
+//use color_quant::NeuQuant;
 
 #[derive(GodotClass)]
 #[class(tool, base=Resource)]
@@ -58,16 +58,16 @@ impl SpriteImporter {
 		reindex_palette: bool,
 		bit_depth: i64,
 		//generate_palette: bool,
-		quality_level: i32,
+		//quality_level: i32,
 	) -> Array<Gd<BinSprite>> {
 		let file_vector: Vec<GString> = sprites.to_vec();
 		let mut sprite_vector: Array<Gd<BinSprite>> = array![];
 		
 		for item in file_vector {
 			match Self::import_sprite(
-				item, embed_palette, halve_alpha, flip_h, flip_v, as_rgb,
+				item.into(), embed_palette, halve_alpha, flip_h, flip_v, as_rgb,
 				reindex_sprite, reindex_palette, bit_depth,
-				/*generate_palette,*/ quality_level
+				/*generate_palette, quality_level */
 			) {
 				Some(bin_sprite) => sprite_vector.push(&bin_sprite),
 				None => continue,
@@ -82,7 +82,7 @@ impl SpriteImporter {
 	
 	#[func]
 	fn import_sprite(
-		file_path: GString,
+		file_path: String,
 		embed_palette: bool,
 		halve_alpha: bool,
 		flip_h: bool,
@@ -91,10 +91,9 @@ impl SpriteImporter {
 		reindex_sprite: bool,
 		reindex_palette: bool,
 		bit_depth: i64,
-		quality_level: i32,
+		/*quality_level: i32,*/
 	) -> Option<Gd<BinSprite>> {
-		let file_string: String = String::from(file_path);
-		let file: PathBuf = PathBuf::from(file_string);
+		let file: PathBuf = PathBuf::from(&file_path);
 		
 		if !file.exists() {
 			return None;
@@ -102,7 +101,7 @@ impl SpriteImporter {
 		
 		let mut sprite: Gd<BinSprite>;
 		
-		match bin_sprite::load_from_file(&file, embed_palette) {
+		match BinSprite::load_from_file(file_path, embed_palette) {
 			Some(binsprite) => sprite = binsprite,
 			None => return None,
 		}

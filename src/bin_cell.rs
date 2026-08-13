@@ -364,7 +364,7 @@ impl Cell {
 
 			single_dict.set("x_offset", 0);
 			single_dict.set("y_offset", 0);
-			//single_dict.set("texture", &sprite_ref.texture.clone().unwrap());
+			single_dict.set("texture", &sprite_ref.get_texture().unwrap());
 			return_dict.set(0, &single_dict);
 
 			return return_dict;
@@ -374,15 +374,17 @@ impl Cell {
 		let mut dictionary: Dictionary<Variant, Variant> = Dictionary::new();
 
 		// Allocate pow2 texture like +R does...
-		let pow2_width = sprite_ref.get_width().next_power_of_two() as isize;
-		let pow2_height = sprite_ref.get_height().next_power_of_two() as isize;
+		//let pow2_width = sprite_ref.get_width().next_power_of_two() as isize;
+		let pow2_width = sprite_ref.get_texture_width() as isize;
+		let pow2_height = sprite_ref.get_texture_height() as isize;
 
 		let mut pow2_src_pixels: Vec<u8> = Vec::with_capacity((pow2_width * pow2_height) as usize);
+		let src_pixels = sprite_ref.get_pixels();
 
 		// Blit source sprite into pow2 texture
 		for row in 0..sprite_ref.get_height() as usize {
 			for col in 0..sprite_ref.get_width() as usize {
-				pow2_src_pixels.push(sprite_ref.get_pixels()[row * sprite_ref.get_width() as usize + col]);
+				pow2_src_pixels.push(src_pixels[row * sprite_ref.get_width() as usize + col]);
 			}
 
 			for _col in sprite_ref.get_width() as isize..pow2_width {

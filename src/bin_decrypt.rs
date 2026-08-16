@@ -4,9 +4,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::bin_identify::ENCRYPTED_SIGNATURE;
+//use crate::bin_identify::ENCRYPTED_SIGNATURE;
 
 use godot::prelude::*;
+
+const ENCRYPTED_SIGNATURE: u32 = 0x41534743;
 
 const MERSENNE_LENGTH: usize = 624;
 const MERSENNE_INIT: u32 = 0x6C078965;

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use godot::prelude::*;
 use godot::classes::image::Format;
 use godot::meta::AsArg;
-use crate::bin_sprite::BinSprite;
+use crate::data_types::bin_sprite::BinSprite;
 use crate::sprite_transform;
 use crate::psd;
 

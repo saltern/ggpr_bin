@@ -11,9 +11,9 @@ use godot::prelude::*;
 
 use crate::bin_identify::*;
 //use crate::bin_sprite;
-use crate::bin_sprite::BinSprite;
-use crate::bin_cell::Cell;
-use crate::bin_script::*;
+use crate::data_types::bin_sprite::BinSprite;
+use crate::data_types::bin_cell::Cell;
+use crate::data_types::bin_script::*;
 use crate::bin_decrypt::*;
 use crate::sprite_load_save::SpriteLoadSave;
 

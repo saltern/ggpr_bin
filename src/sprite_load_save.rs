@@ -1,4 +1,3 @@
-use crate::{Deserialization, Serialization};
 use std::io::Write;
 use std::io::BufWriter;
 use std::fs;
@@ -6,16 +5,10 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use godot::prelude::*;
-//use godot::classes::Image;
-//use godot::classes::image::Format;
 
-use crate::bin_sprite;
-//use crate::bin_palette::BinPalette;
-//use crate::sprite_get;
-//use crate::sprite_compress;
-
+use crate::{Deserialization, Serialization};
+use crate::data_types::bin_sprite;
 use bin_sprite::BinSprite;
-//use sprite_compress::SpriteData;
 
 
 #[derive(GodotClass)]

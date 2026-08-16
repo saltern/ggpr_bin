@@ -1,4 +1,4 @@
-use crate::bin_sprite::BinSprite;
+use crate::data_types::bin_sprite::BinSprite;
 use godot::prelude::*;
 
 use crate::Identification;

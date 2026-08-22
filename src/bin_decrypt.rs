@@ -4,8 +4,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-//use crate::bin_identify::ENCRYPTED_SIGNATURE;
-
 use godot::prelude::*;
 
 const ENCRYPTED_SIGNATURE: u32 = 0x41534743;
@@ -22,10 +20,12 @@ const MERSENNE_PRNG2: u32 = 0xEFC60000;
 
 const LAST_OUT: u32 = 0x43415046;
 
+
 struct MersenneTwister {
 	index: usize,
 	table: Vec<u32>,
 }
+
 
 impl MersenneTwister {
 	pub fn initialize(&mut self, seed: u32) {
@@ -73,85 +73,18 @@ impl MersenneTwister {
 	}
 }
 
-pub fn decrypt_file(path: PathBuf, bin_data: Vec<u8>) -> Vec<u8> {
-	// Ugly block, I know
-	let option_str: Option<&str>;
-	
-	match path.file_name() {
-		Some(name) => option_str = name.to_str(),
-		None => return Vec::new(),
-	}
-
-	let file_upper: String;
-
-	match option_str {
-		Some(str) => file_upper = str.to_uppercase(),
-		None => return Vec::new(),
-	}
-	
-	let name_bytes: Vec<u8> = file_upper.into_bytes();
-	
-	let mut seed: u32 = 0;
-	for char in 0..name_bytes.len() {
-		seed *= 137;
-		seed += name_bytes[char] as u32;
-	}
-
-	let mut twister = MersenneTwister {
-		index: 0,
-		table: Vec::with_capacity(MERSENNE_LENGTH),
-	};
-
-	twister.initialize(seed);
-
-	let mut last_out: u32 = LAST_OUT;
-	let mut cursor: usize = 0;
-	let mut output: Vec<u8> = Vec::new();
-
-	while cursor + 4 <= bin_data.len() {
-		let value_in: u32 = u32::from_le_bytes([
-			bin_data[cursor + 0x00],
-			bin_data[cursor + 0x01],
-			bin_data[cursor + 0x02],
-			bin_data[cursor + 0x03],
-		]);
-
-		last_out ^= value_in ^ twister.get_next_number();
-		output.extend(last_out.to_le_bytes());
-		cursor += 4;
-	}
-
-	return output;
-}
-
 
 #[derive(GodotClass)]
-#[class(tool, base=Resource)]
-struct DirDecrypter {
-	base: Base<Resource>,
-}
+#[class(tool, base=RefCounted, no_init)]
+struct BinDecrypter {}
 
 
 #[godot_api]
-impl IResource for DirDecrypter {
-	fn init(base: Base<Resource>) -> Self {
-		Self {
-			base,
-		} 
-	}
-}
-
-
-#[godot_api]
-impl DirDecrypter {
-	/// Decrypts an entire directory of .bin files
-	#[func] pub fn decrypt_folder(path: String, mut global_signals: Gd<Node>) {
+impl BinDecrypter {
+	/// Decrypts an entire directory of .bin files, overwriting
+	/// each file's contents with the decrypted data.
+	#[func] pub fn decrypt_folder(path: String) {
 		let path_buf: PathBuf = PathBuf::from(&path);
-		let reference: &mut Gd<Node> = &mut global_signals;
-
-		reference.call_deferred("emit_signal", &[
-			Variant::from("decryption_start")
-		]);
 
 		for result_entry in path_buf.read_dir().unwrap() {
 			// Error, directory: skip
@@ -172,27 +105,68 @@ impl DirDecrypter {
 			// Attempt read
 			match fs::read(entry.path()) {
 				Ok(data) => {
-					let bin_data;
+					let file_name: String;
 
-					// Encryption signature check
-					if u32::from_le_bytes([
-						data[data.len() - 0x01],
-						data[data.len() - 0x02],
-						data[data.len() - 0x03],
-						data[data.len() - 0x04],
-					]) == ENCRYPTED_SIGNATURE {
-						// Write immediately
-						bin_data = decrypt_file(entry.path(), data);
-						let _ = fs::write(entry.path(), bin_data);
+					match entry.path().file_name() {
+						Some(name) => file_name = name.to_str().unwrap().to_uppercase(),
+						_ => continue,
 					}
+
+					let bin_data = Self::decrypt_file(file_name, data);
+					let _ = fs::write(entry.path(), bin_data);
 				}
 
 				_ => continue,
 			}
 		}
+	}
 
-		reference.call_deferred("emit_signal", &[
-			Variant::from("decryption_end")
-		]);
+
+	/// Decrypts a [PackedByteArray], returning another containing the processed data.
+	/// Returns the data as-is if the encryption signature isn't found.
+	#[func] pub fn decrypt_file(file_name: String, bin_data: Vec<u8>) -> Vec<u8> {
+		// Do nothing if the file isn't encrypted
+		if u32::from_le_bytes([
+			bin_data[bin_data.len() - 0x01],
+			bin_data[bin_data.len() - 0x02],
+			bin_data[bin_data.len() - 0x03],
+			bin_data[bin_data.len() - 0x04],
+		]) != ENCRYPTED_SIGNATURE {
+			return bin_data;
+		}
+
+		let name_bytes: Vec<u8> = file_name.to_uppercase().into_bytes();
+
+		let mut seed: u32 = 0;
+		for char in 0..name_bytes.len() {
+			seed *= 137;
+			seed += name_bytes[char] as u32;
+		}
+
+		let mut twister = MersenneTwister {
+			index: 0,
+			table: Vec::with_capacity(MERSENNE_LENGTH),
+		};
+
+		twister.initialize(seed);
+
+		let mut last_out: u32 = LAST_OUT;
+		let mut cursor: usize = 0;
+		let mut output: Vec<u8> = Vec::new();
+
+		while cursor + 4 <= bin_data.len() {
+			let value_in: u32 = u32::from_le_bytes([
+				bin_data[cursor + 0x00],
+				bin_data[cursor + 0x01],
+				bin_data[cursor + 0x02],
+				bin_data[cursor + 0x03],
+			]);
+
+			last_out ^= value_in ^ twister.get_next_number();
+			output.extend(last_out.to_le_bytes());
+			cursor += 4;
+		}
+
+		return output;
 	}
 }

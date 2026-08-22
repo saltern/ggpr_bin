@@ -43,7 +43,7 @@ pub struct ImportData {
 
 #[derive(GodotClass)]
 #[class(tool, base=RefCounted, no_init)]
-pub struct ImageImporter {}
+pub struct SpriteImporter {}
 
 
 // Palletization
@@ -79,7 +79,7 @@ pub fn quantize(rgba: Vec<u8>, bit_depth: u16, quality_level: i32) -> (Vec<u8>, 
 
 
 #[godot_api]
-impl ImageImporter {
+impl SpriteImporter {
 	#[func]
 	pub fn load_from_png(source_file: String, with_palette: bool) -> Option<Gd<ImportData>> {
 		// Get info

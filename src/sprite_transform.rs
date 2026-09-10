@@ -1,11 +1,61 @@
 use std::cmp;
+use godot::prelude::*;
+
+
+#[derive(GodotClass)]
+#[class(tool, base=RefCounted, no_init)]
+/// Link class to access Rust sprite transformation functions from GDScript.
+struct SpriteTransformer {}
+
+
+#[godot_api]
+impl SpriteTransformer {
+	/// Reindex the given array of pixels.
+	#[func] pub fn transform_pixels(vector: Vec<u8>) -> Vec<u8> {
+		return reindex_vector(vector);
+	}
+	
+	
+	/// Reindex the given palette. Its size should be a multiple of 4.
+	#[func] pub fn transform_palette(vector: Vec<u8>) -> Vec<u8> {
+		return reindex_rgba_vector(vector);
+	}
+	
+	
+	/// Flip the given array of pixels horizontally.
+	#[func] pub fn flip_horz(vector: Vec<u8>, width: i64) -> Vec<u8> {
+		let w: usize = width as usize;
+		let h: usize = vector.len() / w;
+		return flip_h(vector, w, h);
+	}
+	
+	
+	/// Flip the given array of pixels vertically.
+	#[func] pub fn flip_vert(vector: Vec<u8>, width: i64) -> Vec<u8> {
+		let w: usize = width as usize;
+		let h: usize = vector.len() / w;
+		return flip_v(vector, w, h);
+	}
+	
+	
+	/// Flip the given array of pixels along both axes.
+	#[func] pub fn flip_both(vector: Vec<u8>) -> Vec<u8> {
+		let mut temp_vec: Vec<u8> = Vec::with_capacity(vector.len());
+		
+		for byte in 0..vector.len() {
+			temp_vec.push(vector[vector.len() - byte - 1]);
+		}
+		
+		return temp_vec;
+	}
+}
 
 
 pub fn reindex_vector(vector: Vec<u8>) -> Vec<u8> {
 	let mut temp_vec: Vec<u8> = Vec::new();
 
-	for pixel in 0..vector.len() {
-		temp_vec.push(transform_index(vector[pixel]));
+	for pixel in vector {
+		temp_vec.push(transform_index(pixel));
 	}
 	
 	return temp_vec;
@@ -29,21 +79,13 @@ pub fn reindex_rgba_vector(vector: Vec<u8>) -> Vec<u8> {
 }
 
 
-pub fn transform_index(mut value: u8) -> u8 {
-	// Divide the currently read byte by 8.
-	// - If remainder + 2 can be evenly divided by 4, output is byte value - 8
-	// - If remainder + 3 can be evenly divided by 4, output is byte value + 8
-	// The original value is passed through otherwise
-	
-	if ((value / 8) + 2) % 4 == 0 {
-		value -= 8;
+pub fn transform_index(index: u8) -> u8 {
+	// Simpler, possibly faster approach
+	match index & 0x18 {
+		0x10 => index - 8,
+		0x08 => index + 8,
+		_ => index,
 	}
-	
-	else if ((value / 8) + 3) % 4 == 0 {
-		value += 8
-	}
-	
-	return value;
 }
 
 

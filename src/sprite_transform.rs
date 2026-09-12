@@ -48,6 +48,12 @@ impl SpriteTransformer {
 		
 		return temp_vec;
 	}
+	
+	
+	/// Expand a 4 bpp pixel array from two pixels per byte to one pixel per byte.
+	#[func] pub fn expand_4bpp_array(vector: Vec<u8>, flip: bool) -> Vec<u8> {
+		return bpp_from_4(vector, flip);
+	}
 }
 
 

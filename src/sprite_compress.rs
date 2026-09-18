@@ -185,19 +185,19 @@ impl SpriteCompression {
 		const ADDRESS_WIDTH			: usize = 0x06;
 		const ADDRESS_HEIGHT		: usize = 0x08;
 
-		const COLOR_COUNT_4_HALF: usize = 8;
-		const COLOR_COUNT_4_FULL: usize = 16;
-		const COLOR_COUNT_8_HALF: usize = 128;
-		const COLOR_COUNT_8_FULL: usize = 256;
+		const COLOR_COUNT_4_HALF	: usize = 8;
+		const COLOR_COUNT_4_FULL	: usize = 16;
+		const COLOR_COUNT_8_HALF	: usize = 128;
+		const COLOR_COUNT_8_FULL	: usize = 256;
 
-		const CLUT_NONE			: u16 = 0x0000;
-		const CLUT_HALF			: u16 = 0x0010;
-		const CLUT_FULL			: u16 = 0x0020;
+		const CLUT_NONE				: u16 = 0x0000;
+		const CLUT_HALF				: u16 = 0x0010;
+		const CLUT_FULL				: u16 = 0x0020;
 
-		const CLUT_SIZE_4_HALF	: usize = 4 * COLOR_COUNT_4_HALF;
-		const CLUT_SIZE_4_FULL	: usize = 4 * COLOR_COUNT_4_FULL;
-		const CLUT_SIZE_8_HALF	: usize = 4 * COLOR_COUNT_8_HALF;
-		const CLUT_SIZE_8_FULL	: usize = 4 * COLOR_COUNT_8_FULL;
+		const CLUT_SIZE_4_HALF		: usize = 4 * COLOR_COUNT_4_HALF;
+		const CLUT_SIZE_4_FULL		: usize = 4 * COLOR_COUNT_4_FULL;
+		const CLUT_SIZE_8_HALF		: usize = 4 * COLOR_COUNT_8_HALF;
+		const CLUT_SIZE_8_FULL		: usize = 4 * COLOR_COUNT_8_FULL;
 
 		const ADDRESS_HEADER_END	: usize = 0x10;
 		
@@ -588,31 +588,44 @@ impl SpriteCompression {
 	#[func]
 	fn decompress_ggx(bin_data: Vec<u8>) -> Vec<u8> {
 		const ADDRESS_MODE			: usize = 0x00;
-		const ADDRESS_GGXP_WIDTH	: usize = 0x02;
-		const ADDRESS_GGXP_HEIGHT	: usize = 0x04;
+		const ADDRESS_CLUT			: usize = 0x01;
+		const ADDRESS_WIDTH			: usize = 0x02;
+		const ADDRESS_HEIGHT		: usize = 0x04;
 		
-		const MODE_GGXP8		: u8 = 0x13;
-		const MODE_GGXP4		: u8 = 0x14;
+		const MODE_8_BPP			: u8 = 0x13;
+		const MODE_4_BPP			: u8 = 0x14;
+		
+		//const CLUT_NONE				: u8 = 0x0F;
+		const CLUT_HALF				: u8 = 0x02;
+		const CLUT_FULL				: u8 = 0x00;
 		
 		let width: usize = u16::from_le_bytes([
-			bin_data[ADDRESS_GGXP_WIDTH + 0],
-			bin_data[ADDRESS_GGXP_WIDTH + 1],
+			bin_data[ADDRESS_WIDTH + 0],
+			bin_data[ADDRESS_WIDTH + 1],
 		]) as usize;
 
 		let height: usize = u16::from_le_bytes([
-			bin_data[ADDRESS_GGXP_HEIGHT + 0],
-			bin_data[ADDRESS_GGXP_HEIGHT + 1],
+			bin_data[ADDRESS_HEIGHT + 0],
+			bin_data[ADDRESS_HEIGHT + 1],
 		]) as usize;
 
 		let bit_depth: u16;
 
 		match bin_data[ADDRESS_MODE] {
-			MODE_GGXP4 => bit_depth = DEPTH_4,
-			MODE_GGXP8 => bit_depth = DEPTH_8,
+			MODE_4_BPP => bit_depth = DEPTH_4,
+			MODE_8_BPP => bit_depth = DEPTH_8,
 			_ => panic!("bin_sprite.rs::decompress_ggx() -> Invalid bit depth!"),
 		}
 
-		let mut pointer: usize = 0x00;
+		let mut pointer: usize = 0x10;
+		let clut_size: usize = (4 * 2u8.pow(bit_depth as u32)) as usize;
+		
+		match bin_data[ADDRESS_CLUT] & 0xF {
+			CLUT_HALF => pointer += clut_size / 2,
+			CLUT_FULL => pointer += clut_size,
+			_ => (),
+		}
+		
 		let mut pixel_vector: Vec<u8> = Vec::new();
 
 		while pixel_vector.len() < width * height {

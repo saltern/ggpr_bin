@@ -134,7 +134,7 @@ impl SpriteCompression {
 		for byte in 0..compressed_stream.len() / 2 {
 			bin_data.extend([
 				compressed_stream[2 * byte + 1],
-				compressed_stream[2 + byte + 0],
+				compressed_stream[2 * byte + 0],
 			])
 		}
 
